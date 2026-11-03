@@ -1,34 +1,65 @@
-# AskWRI
+# AskWRI (Team 29)
 
-Research assistant over WRI publications. Every answer cites the passages it came from, and it
-declines when the corpus doesn't have an answer. Bedrock + AgentCore, Python 3.12.
+AWS Breaking Barriers US 2026, World Resources Institute.
 
+AskWRI is a research assistant over WRI publications. It cites a source passage for every claim, checks each sentence against the passage it cites, and declines when the sources don't support an answer. It also shows how complete the search was and how WRI's view on a topic has changed over time.
+
+> Status: planning. Items marked (planned) are not built yet.
+
+## Architecture
+
+### Query path
+
+```mermaid
+flowchart TD
+  UI["Web UI (Next.js)"] --> SUP
+
+  subgraph RT["AgentCore Runtime (Strands agents)"]
+    SUP["Supervisor"] --> ANS["Answer"]
+    SUP --> BRF["Briefing"]
+    SUP --> GAP["Gaps"]
+    SUP --> TRN["Translate"]
+    SUP --> VER["Verifier"]
+  end
+
+  RT --> GW["AgentCore Gateway: search tool"]
+  GW --> KB["Bedrock Knowledge Base: hybrid search"]
+  KB --> DB[("Aurora pgvector: passages + doc cards")]
+  KB --> RR["Rerank"]
+
+  subgraph X["Cross-cutting"]
+    GR["Guardrails: PII, grounding"]
+    MEM["Memory: chat context"]
+    TR["Tracing: agent traces"]
+    SC["Scorecard: recall, precision"]
+  end
 ```
-ui/index.html -> api/server.py (or AgentCore runtime) -> supervisor agent
-    supervisor -> ask / briefing / gap / translate agents -> search_wri -> Bedrock Knowledge Base -> S3
+
+### Ingestion path
+
+```mermaid
+flowchart LR
+  S3["S3: PDFs + metadata"] --> P["Parse (layout aware)"]
+  P --> C["Chunk: hierarchical + semantic"]
+  C --> E["Embed + store (multilingual)"]
+  E --> DB[("Aurora pgvector")]
+  P --> D["Doc cards: summary + tags"]
+  D --> DB
 ```
 
-Passages get numbered when they're retrieved. The model has to cite those numbers, and `app.py`
-checks that it did. No valid citations means the answer is replaced with the decline message.
+## How it works
+
+1. The UI sends a question to the supervisor agent, which routes to a specialist (answer, briefing, gaps, translate).
+2. Specialists search through one tool (AgentCore Gateway). The knowledge base runs hybrid search on Aurora pgvector, then a rerank model reorders results.
+3. The verifier checks each sentence against its cited passage and drops unsupported claims. If too little survives, the answer becomes a decline.
+4. Two chunk types serve different jobs: passage chunks for answers and citations, and document cards (summary plus tags) for discovery, coverage and time-aware answers.
+
+## Design choices
+
+- Cost: small model for verification and tagging, larger model for final answers, cached repeat queries, Aurora Serverless v2 at a low minimum.
+- Security: private encrypted S3, least-privilege IAM, PII filters on questions and answers, no identifiers in memory or traces.
+- Evaluation: recall and precision against expected sources, plus a check that unanswerable questions are declined.
 
 ## Setup
 
-1. Turn on Bedrock model access (generation + embeddings).
-2. Private, encrypted S3 bucket -> `CORPUS_BUCKET`.
-3. Fill in `data/manifest.csv` and run `python scripts/download_corpus.py data/manifest.csv`.
-4. Create the Knowledge Base on that bucket. Hybrid search needs OpenSearch Serverless or Aurora
-   pgvector; with S3 Vectors remove `overrideSearchType` in `retrieval.py`.
-5. Copy `.env.example`, set `KB_ID` / `KB_DATA_SOURCE_ID`, then `python scripts/ingest.py`.
-6. `pip install -r requirements.txt && uvicorn api.server:app --port 8000`
-7. Deploy: `agentcore configure -e src/askwri/app.py` then `agentcore launch`.
-
-## Eval
-
-Put 15-25 questions in `eval/questions.jsonl` (include at least one unanswerable), then
-`python eval/run_eval.py`.
-
-## To check
-
-- Which model IDs the sandbox actually allows.
-- `MIN_SCORE` is a guess. Scores differ by store and search type.
-- Page numbers only show up for some parser settings.
+(planned) Steps to deploy from this repo.
