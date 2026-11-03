@@ -1,0 +1,7 @@
+boto3>=1.40
+strands-agents>=1.0
+bedrock-agentcore>=1.0
+bedrock-agentcore-starter-toolkit
+fastapi>=0.115
+uvicorn>=0.30
+requests>=2.32

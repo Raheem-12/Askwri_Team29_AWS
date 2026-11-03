@@ -1,0 +1,3 @@
+{"id": "q01", "question": "FILL IN from your ingested documents", "expected_sources": ["substring-of-doc-title-or-url"], "answerable": true}
+{"id": "q02", "question": "FILL IN a second answerable question", "expected_sources": ["substring-of-doc-title-or-url"], "answerable": true}
+{"id": "u01", "question": "What did WRI publish about the 2031 Mars colony water treaty?", "expected_sources": [], "answerable": false}
