@@ -18,7 +18,9 @@ Keep it short. Don't write a source list, the app builds that."""
 
 
 def model(temp=0.1):
-    return BedrockModel(model_id=MODEL_ID, temperature=temp, region_name=retrieval.REGION)
+    # Sonnet 5.x rejects the temperature parameter outright
+    settings = {} if "claude-sonnet-5" in MODEL_ID else {"temperature": temp}
+    return BedrockModel(model_id=MODEL_ID, region_name=retrieval.REGION, **settings)
 
 
 @tool

@@ -51,7 +51,11 @@ Pins come from place names that appear **inside a quoted passage**. A chunk that
 4. Grant the app's role `bedrock:Retrieve` on the KB, `bedrock:InvokeModel` on the Sonnet 5.5 inference profile, and `bedrock:ApplyGuardrail` on the guardrail (see `docs/guardrails-setup.md`).
 5. Run `eval/run_eval.py` after filling in `eval/questions.jsonl` (the first two entries are still placeholders).
 
-## 5. Connection map
+## 5. Demand Radar
+
+Questions asked on the globe and in the agents chat page both feed Demand Radar at `/radar`. It decides "not loaded yet" by comparing `data/manifest*.csv` with `data/catalog.csv`, so keep the manifests in step with what is actually ingested, and replace the 5-row sample catalog with the full WRI list. It also marks answers as weak coverage when the top retrieval score is below `RADAR_WEAK_SCORE` (0.5), so check that value against your KB's real scores. Delete `data/radar.db` when you leave demo mode: rows from demo mode are labeled simulated.
+
+## 6. Connection map
 
 `GET /api/graph` builds the map from `data/manifest.csv` and `data/manifest_extra.csv`: topic hubs → publications, plus links between publications that share title terms. For stronger, evidence-based links, an offline job can write `data/graph.json`:
 

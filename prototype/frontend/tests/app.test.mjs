@@ -35,7 +35,7 @@ function boot({ api = {}, mobile = false } = {}) {
   const calls = { ask: [], glance: [], status: 0 };
   const fake = {
     status: async () => { calls.status++; return { configured: true, connection_verified: false, demo: false, guardrails: true }; },
-    ask: async q => { calls.ask.push(q); return answer(); },
+    ask: async (q, team) => { calls.ask.push(q); calls.team = team; return answer(); },
     glance: async (placeName, q) => { calls.glance.push([placeName, q]); return { status: 'answered', place: placeName,
       claims: [{ text: `${placeName} claim.`, evidence: [{ source_id: 'S1', quote: 'TEST FIXTURE glance quote.' }] }],
       sources: [{ id: 'S1', title: 'TEST FIXTURE - Glance source', url: null, page: 2, passage: 'TEST FIXTURE glance quote.' }] }; },
@@ -85,6 +85,33 @@ test('asking sends the trimmed question and opens the answer panel with citation
   assert.match(t.$('sources').textContent, /PDF page 7/);
   assert.equal(t.$('sources').querySelectorAll('a').length, 0);
   assert.equal(t.$('copy-answer').hidden, false);
+  t.close();
+});
+
+test('the optional team goes with the question, and is left out when not chosen', async () => {
+  const t = boot(); await settle();
+  await t.ask('Where is flooding?');
+  assert.equal(t.calls.team, undefined);
+  t.$('team').value = 'Cities';
+  await t.ask('Where is flooding?');
+  assert.equal(t.calls.team, 'Cities');
+  t.close();
+});
+
+test('people can see their question was logged to Demand Radar', async () => {
+  const withGap = answer({ radar: { gap_type: 'weak', matched_title: null } });
+  let t = boot({ api: { ask: async () => withGap } }); await settle();
+  await t.ask('Where is flooding?');
+  assert.match(t.$('answer-body').textContent, /without your name to Demand Radar as weak coverage/);
+  assert.equal(t.$('answer-body').querySelector('.radar-note a').getAttribute('href'), '/radar');
+  t.close();
+  t = boot({ api: { ask: async () => answer({ radar: { gap_type: null } }) } }); await settle();
+  await t.ask('Where is flooding?');
+  assert.match(t.$('answer-body').textContent, /Question logged without your name/);
+  t.close();
+  t = boot(); await settle(); // a blocked question has no radar field and no note
+  await t.ask('Where is flooding?');
+  assert.equal(t.$('answer-body').querySelector('.radar-note'), null);
   t.close();
 });
 

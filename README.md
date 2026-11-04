@@ -57,7 +57,7 @@ flowchart LR
 
 ## Demand Radar
 
-Every question AskWRI can't answer well is logged, grouped by topic and ranked, at `/radar`. Not every "no answer" means the same thing, so each gap is sorted by who can fix it:
+Every question AskWRI can't answer well, from the globe or the agents chat page, is logged, grouped by topic and ranked, at `/radar`. Not every "no answer" means the same thing, so each gap is sorted by who can fix it:
 
 | Gap type | How it's detected | Action |
 |---|---|---|
@@ -67,7 +67,7 @@ Every question AskWRI can't answer well is logged, grouped by topic and ranked, 
 
 Clusters are ranked by questions × distinct teams × trend (this window vs the previous one). The page filters by gap type, team and language, and exports a "Top 10 gaps" summary as Markdown.
 
-Privacy: no names or user ids are stored, only the question (emails and phone numbers removed), an optional team label and the retrieval outcome. Rows older than `RADAR_RETENTION_DAYS` (default 90) are deleted.
+Privacy: no names or user ids are stored, only the question (emails and phone numbers removed), an optional team label and the retrieval outcome. On the globe the stored text is the guardrail-masked question, and blocked questions are never stored. Rows older than `RADAR_RETENTION_DAYS` (default 90) are deleted.
 
 Current limits, to replace once the AWS sandbox is available:
 - **Catalog:** `data/catalog.csv` is a small sample. Replace it with metadata (title, year, program, url) for all WRI reports. No full text is needed.
@@ -97,7 +97,7 @@ prototype/
 docs/               Setup guides: guardrails-setup.md, knowledge-base-handoff.md (plus WRI.pdf)
 ```
 
-`src/` + `api/` and `prototype/` are two separate apps. The prototype reads `BEDROCK_KB_ID` and `BEDROCK_MODEL_ID` and falls back to `KB_ID` and `MODEL_ID`, so one `.env` holds the values for both. Only the prototype loads the file itself. For `src/askwri`, `scripts/` and `eval/`, load it into your shell first: `set -a; source .env; set +a`.
+`src/` + `api/` and `prototype/` are two separate apps that share Demand Radar. `ASKWRI_MOCK=1` runs the agents app without AWS; `DEMO_MODE=true` runs the globe on labeled sample data. The prototype reads `BEDROCK_KB_ID` and `BEDROCK_MODEL_ID` and falls back to `KB_ID` and `MODEL_ID`, so one `.env` holds the values for both. Only the prototype loads the file itself. For `src/askwri`, `scripts/` and `eval/`, load it into your shell first: `set -a; source .env; set +a`.
 
 ## Local files that are not in git
 
@@ -156,4 +156,4 @@ npm ci
 npm run dev        # http://localhost:5173
 ```
 
-Tests: `cd prototype/backend && python -m pytest` and `cd prototype/frontend && npm test`.
+Tests: `python -m pytest tests` (Radar), `cd prototype/backend && python -m pytest`, and `cd prototype/frontend && npm test`.

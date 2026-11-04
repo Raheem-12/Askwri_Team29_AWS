@@ -29,7 +29,8 @@ def payload(**overrides):
 
 
 @pytest.fixture(autouse=True)
-def clean_env(monkeypatch):
+def clean_env(monkeypatch, tmp_path):
+    monkeypatch.setenv('RADAR_DB', str(tmp_path / 'radar.db'))  # never touch the real log
     for name in ('DEMO_MODE', 'GUARDRAIL_ID', 'GUARDRAIL_VERSION', 'BEDROCK_KB_ID', 'KB_ID',
                  'BEDROCK_MODEL_ID', 'MODEL_ID', 'AWS_REGION', 'KB_TYPE', 'KB_SEARCH_TYPE'):
         monkeypatch.delenv(name, raising=False)
@@ -267,6 +268,96 @@ def test_api_returns_503_when_guardrail_cannot_run(guard_env, monkeypatch):
     monkeypatch.setattr(backend, 'aws_clients', lambda region: (None, FakeGuard(error=error)))
     response = TestClient(backend.app).post('/api/ask', json={'question': 'electric buses in cities'})
     assert response.status_code == 503 and 'secret account detail' not in response.text
+
+
+# ------------------------------------------------------------ Demand Radar
+def radar_rows():
+    with backend.radar.connect() as con:
+        return [dict(r) for r in con.execute('SELECT * FROM questions')]
+
+
+def test_globe_question_reaches_radar_with_team_and_is_labeled_simulated_in_demo(monkeypatch):
+    monkeypatch.setenv('DEMO_MODE', 'true')
+    body = TestClient(backend.app).post('/api/ask', json={'question': 'electric buses in cities', 'team': 'Cities'}).json()
+    assert '_top_score' not in body and 'radar' in body
+    row = radar_rows()[0]
+    assert row['question'] == 'electric buses in cities' and row['team'] == 'Cities' and row['endpoint'] == 'ask'
+    assert row['answered'] == 1 and row['source'] == 'seed'
+    assert TestClient(backend.app).get('/api/radar').json()['simulated'] is True
+
+
+def test_real_mode_rows_are_live_and_keep_the_retrieval_score(monkeypatch):
+    class Retriever:
+        def retrieve(self, **_):
+            return {'retrievalResults': [{'score': 0.2, 'content': {'text': PASSAGE}, 'metadata': {'title': 'T'}},
+                                         {'score': 0.4, 'content': {'text': PASSAGE}, 'metadata': {'title': 'U'}}]}
+
+    class Generator:
+        def converse(self, **_):
+            return {'output': {'message': {'content': [{'text': json.dumps(payload())}]}}}
+
+    result = backend.answer_question('flooding in Jakarta', Retriever(), Generator(), 'kb', 'm')
+    assert result['sources'][0].keys() == {'id', 'title', 'url', 'page', 'passage'}  # no score sent to the model
+    logged = backend.log_to_radar(result)
+    assert logged['radar']['gap_type'] == 'weak'  # below RADAR_WEAK_SCORE
+    row = radar_rows()[0]
+    assert row['source'] == 'live' and row['top_score'] == 0.4
+
+
+def test_radar_stores_the_masked_question_never_the_raw_one(guard_env, monkeypatch):
+    monkeypatch.setenv('DEMO_MODE', 'true')
+    guard = FakeGuard({'action': 'GUARDRAIL_INTERVENED', 'outputs': [{'text': 'electric buses in cities, ask {EMAIL}'}],
+                       'assessments': [{'sensitiveInformationPolicy': {'piiEntities': [{'action': 'ANONYMIZED'}]}}]},
+                      {'action': 'NONE'})
+    monkeypatch.setattr(backend, 'aws_clients', lambda region: (None, guard))
+    TestClient(backend.app).post('/api/ask', json={'question': 'electric buses in cities, ask secret-person@example.org'})
+    rows = radar_rows()
+    assert len(rows) == 1 and 'secret-person' not in rows[0]['question'] and '{EMAIL}' in rows[0]['question']
+
+
+def test_blocked_questions_are_never_logged(guard_env, monkeypatch):
+    monkeypatch.setenv('DEMO_MODE', 'true')
+    guard = FakeGuard({'action': 'GUARDRAIL_INTERVENED', 'outputs': [{'text': 'x'}],
+                       'assessments': [{'sensitiveInformationPolicy': {'piiEntities': [{'action': 'BLOCKED'}]}}]})
+    monkeypatch.setattr(backend, 'aws_clients', lambda region: (None, guard))
+    body = TestClient(backend.app).post('/api/ask', json={'question': 'My card is 4111 1111 1111 1111'}).json()
+    assert body['status'] == 'out_of_scope' and 'radar' not in body and radar_rows() == []
+
+
+def test_only_typed_glance_questions_count_as_demand(monkeypatch):
+    monkeypatch.setenv('DEMO_MODE', 'true')
+    client = TestClient(backend.app)
+    client.post('/api/glance', json={'place': 'Jakarta'})
+    client.post('/api/briefing', json={'place': 'Jakarta'})
+    assert radar_rows() == []
+    client.post('/api/glance', json={'place': 'Jakarta', 'question': 'How should drainage be improved?'})
+    rows = radar_rows()
+    assert len(rows) == 1 and rows[0]['endpoint'] == 'glance' and 'Jakarta' in rows[0]['question']
+
+
+def test_radar_failure_does_not_cost_the_answer(monkeypatch):
+    monkeypatch.setenv('DEMO_MODE', 'true')
+
+    def broken(*_, **__):
+        raise backend.sqlite3.OperationalError('unable to open database file')
+
+    monkeypatch.setattr(backend.radar, 'log', broken)
+    response = TestClient(backend.app).post('/api/ask', json={'question': 'electric buses in cities'})
+    assert response.status_code == 200 and response.json()['status'] == 'answered' and response.json()['radar'] is None
+
+
+def test_relative_radar_db_resolves_to_the_repo_root(monkeypatch):
+    monkeypatch.setenv('RADAR_DB', 'data/radar.db')
+    assert backend.radar.db_path() == str(backend.REPO / 'data' / 'radar.db')
+    monkeypatch.delenv('RADAR_DB')
+    assert backend.radar.db_path() == str(backend.REPO / 'data' / 'radar.db')
+
+
+def test_radar_page_and_api_respond():
+    client = TestClient(backend.app)
+    assert client.get('/radar').status_code == 200 and 'Demand Radar' in client.get('/radar').text
+    assert client.get('/api/radar').json()['stats']['questions'] == 0
+    assert 'Demand Radar' in client.get('/api/radar/export').text
 
 
 # ------------------------------------------------------------ graph

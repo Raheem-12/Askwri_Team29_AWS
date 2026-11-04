@@ -45,7 +45,8 @@ export function checkAnswer(data) {
 
 export const api = {
   status: () => request('/api/status', { timeout: 10000 }),
-  ask: question => request('/api/ask', { method: 'POST', body: { question } }).then(checkAnswer),
+  ask: (question, team) => request('/api/ask', {
+    method: 'POST', body: team ? { question, team } : { question } }).then(checkAnswer),
   glance: (place, question) => request('/api/glance', {
     method: 'POST', body: question ? { place, question } : { place } }).then(checkAnswer),
   briefing: (place, topic) => request('/api/briefing', {

@@ -35,6 +35,7 @@
     <nav class="view-toggle" aria-label="View">
       <button id="view-globe" type="button" aria-pressed="true">Globe</button>
       <button id="view-graph" type="button" aria-pressed="false">Connections</button>
+      <a id="radar-link" href="/radar">Radar</a>
     </nav>
     <div class="status" id="connection" data-state="checking" role="status">
       <span class="dot" aria-hidden="true"></span><span id="connection-text">Checking connection…</span>
@@ -107,6 +108,13 @@
       <button class="chip" type="button" data-question="What was WRI's audited operating expenditure in fiscal year 2025?">Test the limits</button>
     </div>
     <div class="ask-row">
+      <select id="team" aria-label="Your team (optional)">
+        <option value="">Team</option>
+        <option>Cities</option><option>Food</option><option>Forests</option><option>Water</option>
+        <option>Climate</option><option>Energy</option><option>Communications</option>
+        <option>Brazil office</option><option>India office</option><option>Africa office</option>
+        <option>Mexico office</option><option>Indonesia office</option>
+      </select>
       <label class="sr-only" for="question">Your research question</label>
       <textarea id="question" rows="1" required minlength="3" maxlength="2000" placeholder="What would you like to understand?"></textarea>
       <button class="primary" id="ask-button" type="submit"><span id="ask-button-text">Find evidence</span><svg aria-hidden="true"><use href="#i-arrow"/></svg></button>

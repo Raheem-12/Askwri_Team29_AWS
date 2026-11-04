@@ -53,7 +53,8 @@ CREATE INDEX IF NOT EXISTS questions_ts ON questions(ts);
 
 
 def db_path():
-    return os.getenv("RADAR_DB", os.path.join(catalog.ROOT, "data", "radar.db"))
+    # a relative RADAR_DB is relative to the repo, not to wherever the server was started
+    return os.path.join(catalog.ROOT, os.getenv("RADAR_DB") or os.path.join("data", "radar.db"))
 
 
 def connect():

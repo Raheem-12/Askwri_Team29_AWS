@@ -128,6 +128,12 @@ try {
   check('briefing lists related publications', await evalJS(`document.querySelectorAll('#b-sources .source').length >= 1`));
   await sleep(300); await shot('6-briefing');
 
+  // ---- Demand Radar sees the question asked on the globe
+  await navigate(new URL('radar', BASE).href);
+  check('Radar page loads and counts the globe question', await waitFor(`fetch('/api/radar').then(r => r.json()).then(d => d.stats.questions >= 1)`));
+  check('Radar labels demo traffic as simulated', await waitFor(`!document.getElementById('sim').hidden`));
+  await sleep(500); await shot('6b-radar');
+
   // ---- connection map
   await navigate(BASE);
   await waitFor(`!!document.getElementById('view-graph')`);

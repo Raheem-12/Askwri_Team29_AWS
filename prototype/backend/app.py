@@ -9,6 +9,8 @@ Production rules (unchanged from milestone 1):
 import json
 import os
 import re
+import sqlite3
+import sys
 from pathlib import Path
 from urllib.parse import urlsplit
 
@@ -16,8 +18,8 @@ import boto3
 from botocore.config import Config
 from botocore.exceptions import BotoCoreError, ClientError
 from dotenv import load_dotenv
-from fastapi import FastAPI, HTTPException
-from fastapi.responses import JSONResponse
+from fastapi import FastAPI, HTTPException, Query
+from fastapi.responses import FileResponse, JSONResponse, PlainTextResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
@@ -30,6 +32,9 @@ import geo  # noqa: E402
 import graph  # noqa: E402
 import guardrails  # noqa: E402
 
+sys.path.insert(0, str(REPO / 'src'))  # Demand Radar lives with the agents app; it needs only the stdlib
+from askwri import radar  # noqa: E402
+
 REFUSAL = 'Insufficient evidence in the sample to answer this question.'
 DIST = ROOT.parent / 'frontend' / 'dist'
 MAX_PINS = 8
@@ -39,11 +44,13 @@ app = FastAPI(title='AskWRI', version='0.2.0')
 # ---------------------------------------------------------------- schemas
 class Question(BaseModel):
     question: str = Field(min_length=3, max_length=2000)
+    team: str | None = Field(default=None, max_length=60)
 
 
 class GlanceRequest(BaseModel):
     place: str = Field(min_length=2, max_length=120)
     question: str | None = Field(default=None, min_length=3, max_length=500)
+    team: str | None = Field(default=None, max_length=60)
 
 
 class BriefingRequest(BaseModel):
@@ -291,9 +298,12 @@ def parse_model_json(raw):
 
 
 def retrieve_sources(retriever, kb_id, query, count):
+    """(sources, top retrieval score). The score stays out of the sources, which go to the model."""
     response = retriever.retrieve(knowledgeBaseId=kb_id, retrievalQuery={'text': query},
                                   retrievalConfiguration=retrieval_config(count))
-    return evidence_sources(response.get('retrievalResults', []))
+    results = response.get('retrievalResults', [])
+    scores = [r['score'] for r in results if isinstance(r.get('score'), (int, float))]
+    return evidence_sources(results), (max(scores) if scores else None)
 
 
 def inference_config(max_tokens):
@@ -333,9 +343,10 @@ def answer_question(question, retriever, generator, kb_id, model_id, guard=None,
     except guardrails.Blocked as blocked:
         return {'status': 'out_of_scope', 'answer': str(blocked), 'claims': [], 'sources': [],
                 'locations': [], 'topic': None, 'demo': demo_mode()}
-    sources = retrieve_sources(retriever, kb_id, question, count)
+    sources, top_score = retrieve_sources(retriever, kb_id, question, count)
+    done = {'topic': question, 'demo': demo_mode(), '_top_score': top_score}
     if not sources:
-        return {**validate_answer({'answerable': False, 'claims': []}, []), 'topic': question, 'demo': demo_mode()}
+        return {**validate_answer({'answerable': False, 'claims': []}, []), **done}
     payload = generate(generator, model_id, mode, system,
                        {'question': question, 'passages': sources, **(extra or {})}, 1800)
     try:
@@ -345,7 +356,26 @@ def answer_question(question, retriever, generator, kb_id, model_id, guard=None,
     if guard and result['status'] == 'answered' and \
             not guardrails.check_output(guard, result['answer'], question, [s['passage'] for s in result['sources']]):
         result = refusal()
-    return {**result, 'topic': question, 'demo': demo_mode()}
+    return {**result, **done}
+
+
+def log_to_radar(result, team=None, endpoint='ask', question=None):
+    """Record a typed question in Demand Radar and return the result for the browser.
+
+    `topic` is the guardrail-masked text, so raw PII is not stored when a guardrail is on, and
+    Radar removes emails and phone numbers regardless. Blocked questions are never logged: one may
+    contain a card number or secret. A Radar problem must never cost the person their answer.
+    """
+    top_score = result.pop('_top_score', None)
+    if result['status'] == 'out_of_scope':
+        return result
+    try:
+        result['radar'] = radar.log(question or result['topic'], result['status'] == 'answered', top_score,
+                                    [s['title'] for s in result['sources']], team=team, endpoint=endpoint,
+                                    source='seed' if demo_mode() else 'live')
+    except (sqlite3.Error, OSError):
+        result['radar'] = None
+    return result
 
 
 def build_briefing(place, topic, retriever, generator, kb_id, model_id, guard=None):
@@ -356,7 +386,7 @@ def build_briefing(place, topic, retriever, generator, kb_id, model_id, guard=No
                 'sections': [], 'sources': [], 'demo': demo_mode()}
     query = f'{topic} in {place}' if topic else f'Main research issues in {place}'
     done = {'place': place, 'topic': topic, 'demo': demo_mode()}
-    sources = retrieve_sources(retriever, kb_id, query, 10)
+    sources, _top_score = retrieve_sources(retriever, kb_id, query, 10)
     if not sources:
         return {**done, 'status': 'insufficient_evidence', 'message': REFUSAL, 'sections': [], 'sources': []}
     payload = generate(generator, model_id, 'briefing', SYSTEM_BRIEFING,
@@ -405,8 +435,8 @@ def ask(request: Question):
     question = request.question.strip()
     if len(question) < 3:
         raise HTTPException(422, 'Enter a research question.')
-    return run_aws(lambda retriever, generator, guard, kb, model:
-                   answer_question(question, retriever, generator, kb, model, guard))
+    return run_aws(lambda retriever, generator, guard, kb, model: log_to_radar(
+        answer_question(question, retriever, generator, kb, model, guard), team=request.team))
 
 
 @app.post('/api/glance')
@@ -414,9 +444,17 @@ def glance(request: GlanceRequest):
     place = known_place(request.place)
     ask_text = f'{place}: {request.question.strip()}' if request.question else \
         f'What are the main issues WRI research describes in {place}?'
-    return run_aws(lambda retriever, generator, guard, kb, model: {
-        **answer_question(ask_text, retriever, generator, kb, model, guard, mode='glance',
-                          system=SYSTEM_GLANCE, extra={'place': place}, count=6), 'place': place})
+
+    def run(retriever, generator, guard, kb, model):
+        result = answer_question(ask_text, retriever, generator, kb, model, guard, mode='glance',
+                                 system=SYSTEM_GLANCE, extra={'place': place}, count=6)
+        if request.question:  # typed by a person; automatic summaries are not demand
+            result = log_to_radar(result, team=request.team, endpoint='glance')
+        else:
+            result.pop('_top_score', None)
+        return {**result, 'place': place}
+
+    return run_aws(run)
 
 
 @app.post('/api/briefing')
@@ -430,6 +468,35 @@ def briefing(request: BriefingRequest):
 @app.get('/api/graph')
 def connection_graph():
     return graph.build_graph(demo.PROGRAM_SAMPLE_DOCS if demo_mode() else ())
+
+
+def radar_report(days, gap, team, language):
+    try:
+        return radar.report(days=days, gap=gap or None, team=team or None, language=language or None)
+    except sqlite3.Error:
+        raise HTTPException(503, 'Demand Radar storage is unavailable.')
+
+
+@app.get('/api/radar')
+def radar_api(days: int = Query(7, ge=1, le=90), gap: str | None = None,
+              team: str | None = None, language: str | None = None):
+    return radar_report(days, gap, team, language)
+
+
+@app.get('/api/radar/export', response_class=PlainTextResponse)
+def radar_export(days: int = Query(7, ge=1, le=90), gap: str | None = None,
+                 team: str | None = None, language: str | None = None):
+    return radar.export_markdown(radar_report(days, gap, team, language))
+
+
+@app.get('/favicon.ico', status_code=204)
+def favicon():
+    return None  # our pages carry an inline icon; this just quiets pages that don't
+
+
+@app.get('/radar')
+def radar_page():
+    return FileResponse(REPO / 'ui' / 'radar.html')
 
 
 if DIST.exists():

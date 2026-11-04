@@ -11,6 +11,7 @@ const NO_GLOBE = {
   reset: noop, zoomBy: noop, toggleRotation: () => false, rotating: false
 };
 const MOBILE = '(max-width: 760px)';
+const GAP_LABELS = { not_loaded: 'not loaded yet', weak: 'weak coverage', never_published: 'no match in WRI’s catalog' };
 
 export function cleanPlaces(list) {
   return (Array.isArray(list) ? list : [])
@@ -148,6 +149,17 @@ export function initApp({ globe = null, api = defaultApi } = {}) {
     $('sources-section').hidden = true;
   }
 
+  // People should be able to see that their question was recorded.
+  function appendRadarNote(data) {
+    if (!data.radar) return;
+    const label = GAP_LABELS[data.radar.gap_type];
+    const note = el('p', label ? 'Logged without your name to ' : 'Question logged without your name to ', 'radar-note');
+    const link = el('a', 'Demand Radar');
+    link.href = '/radar';
+    note.append(link, label ? ` as ${label}.` : '.');
+    $('answer-body').append(note);
+  }
+
   function renderAnswer(data, question) {
     glance.close();
     state.topic = data.topic || null;
@@ -165,6 +177,7 @@ export function initApp({ globe = null, api = defaultApi } = {}) {
       showMessage('Insufficient evidence in the sample',
         (typeof data.answer === 'string' && data.answer) || 'The retrieved passages do not support an answer to this question.');
       $('answer-body').append(el('p', 'Try narrowing the question or checking which publications are included.', 'state-message'));
+      appendRadarNote(data);
       showPlaces([]);
       announce('Insufficient evidence in the sample.');
       return;
@@ -176,6 +189,7 @@ export function initApp({ globe = null, api = defaultApi } = {}) {
     const body = document.createDocumentFragment();
     body.append(el('p', question, 'result-query'), renderClaims(data.claims, lookup));
     $('answer-body').replaceChildren(body);
+    appendRadarNote(data);
     $('sources-section').hidden = false;
     $('sources').replaceChildren(list.length ? renderSources(list, data.claims)
       : el('p', 'The response did not include source details. Treat the answer as unverified.', 'state-message'));
@@ -189,6 +203,7 @@ export function initApp({ globe = null, api = defaultApi } = {}) {
   }
 
   const form = $('ask-form'), question = $('question');
+  if (window.matchMedia(MOBILE).matches) question.placeholder = 'Ask a question…'; // the long one wraps and clips
   function setBusy(busy) {
     state.busy = busy;
     $('ask-button').disabled = busy;
@@ -216,7 +231,7 @@ export function initApp({ globe = null, api = defaultApi } = {}) {
     $('answer-body').replaceChildren(el('div', '', 'loader'), el('h3', 'Finding supporting evidence…', 'state-title'),
       el('p', 'Searching the publication sample and preparing a cited answer.', 'state-message'));
     try {
-      renderAnswer(await api.ask(text), text);
+      renderAnswer(await api.ask(text, $('team').value || undefined), text);
     } catch (error) {
       resetAnswerUI();
       showMessage('We couldn’t complete this search', error.message || 'Check your connection and try again.', 'error-title');
