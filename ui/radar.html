@@ -1,0 +1,180 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>AskWRI Demand Radar</title>
+<style>
+  :root{--bg:#f6f7f7;--panel:#fff;--ink:#14212b;--muted:#5b6b76;--line:#d5dbdf;--accent:#17614a;--accent-ink:#fff;
+    --load:#1f5f8b;--load-bg:#e3eef6;--weak:#8a5a00;--weak-bg:#f8eed8;--new:#6a3d8f;--new-bg:#efe6f6;--up:#b03a2e;color-scheme:light}
+  @media (prefers-color-scheme:dark){:root{--bg:#10171c;--panel:#162028;--ink:#e8eef1;--muted:#97a6b0;--line:#2a3943;--accent:#4fb591;--accent-ink:#08150f;
+    --load:#7db8e0;--load-bg:#16293a;--weak:#e6b65c;--weak-bg:#2d2616;--new:#c9a4e8;--new-bg:#271c33;--up:#f08a7e;color-scheme:dark}}
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.5 system-ui,-apple-system,"Segoe UI",sans-serif}
+  main{max-width:980px;margin:0 auto;padding:24px 18px 64px;display:flex;flex-direction:column;gap:20px}
+  header{display:flex;flex-wrap:wrap;align-items:baseline;justify-content:space-between;gap:8px}
+  h1{font:600 26px/1.2 Georgia,"Times New Roman",serif;margin:0}
+  nav a{color:var(--accent);font-weight:600;text-decoration:none}
+  .sub{color:var(--muted);margin:4px 0 0}
+  .sim{background:var(--weak-bg);color:var(--ink);border-radius:6px;padding:8px 12px;font-size:14px}
+  .stats{display:flex;flex-wrap:wrap;gap:8px 24px;font-size:17px;padding:12px 16px;background:var(--panel);border:1px solid var(--line);border-radius:8px}
+  .stats b{font-variant-numeric:tabular-nums}
+  .types{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px}
+  .type{border-radius:8px;padding:10px 12px;font-size:13.5px;display:flex;flex-direction:column;gap:2px}
+  .type b{font-size:14.5px}
+  .t-not_loaded{background:var(--load-bg)}.t-not_loaded b{color:var(--load)}
+  .t-weak{background:var(--weak-bg)}.t-weak b{color:var(--weak)}
+  .t-never_published{background:var(--new-bg)}.t-never_published b{color:var(--new)}
+  .filters{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+  select,button{font:inherit;color:inherit}
+  select{padding:7px 9px;border:1px solid var(--line);border-radius:6px;background:var(--panel)}
+  button{background:var(--accent);color:var(--accent-ink);border:0;border-radius:6px;padding:8px 14px;cursor:pointer;font-weight:600}
+  button.ghost{background:transparent;color:var(--accent);border:1px solid var(--accent)}
+  .spacer{flex:1}
+  ol.cards{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:10px}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:14px 16px;display:grid;grid-template-columns:2.2em minmax(0,1fr);gap:4px 10px}
+  .rank{font:600 20px/1.2 Georgia,serif;color:var(--muted);font-variant-numeric:tabular-nums}
+  .head{display:flex;flex-wrap:wrap;align-items:baseline;gap:6px 12px}
+  .name{font-weight:650;font-size:16.5px}
+  .count{color:var(--muted);font-variant-numeric:tabular-nums}
+  .trend{font-weight:700;font-size:13px}
+  .trend.up,.trend.new{color:var(--up)} .trend.down{color:var(--muted)} .trend.flat{color:var(--muted)}
+  .chip{font-size:12px;font-weight:600;border-radius:4px;padding:1px 8px}
+  .chip.not_loaded{background:var(--load-bg);color:var(--load)} .chip.weak{background:var(--weak-bg);color:var(--weak)} .chip.never_published{background:var(--new-bg);color:var(--new)}
+  .body{grid-column:2;display:flex;flex-direction:column;gap:4px;font-size:14px}
+  .action b{font-weight:600}
+  .muted{color:var(--muted)}
+  .lang{font-size:12px;border:1px solid var(--line);border-radius:4px;padding:0 6px;margin-right:4px}
+  details summary{cursor:pointer;color:var(--accent);font-weight:600;font-size:13.5px}
+  details ul{margin:6px 0 0;padding-left:1.2em;color:var(--muted)}
+  .empty{color:var(--muted);padding:24px;text-align:center;background:var(--panel);border:1px dashed var(--line);border-radius:8px}
+  dialog{border:1px solid var(--line);border-radius:8px;background:var(--panel);color:var(--ink);width:min(720px,94vw);padding:16px}
+  dialog textarea{width:100%;height:50vh;font:13px/1.45 ui-monospace,Consolas,monospace;background:var(--bg);color:var(--ink);border:1px solid var(--line);border-radius:6px;padding:10px}
+  dialog .row{display:flex;gap:8px;justify-content:flex-end;margin-top:10px}
+  :focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+  @media (max-width:640px){.types{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <div>
+      <h1>Demand Radar</h1>
+      <p class="sub">Questions AskWRI couldn't answer well, grouped by topic and ranked by demand.</p>
+    </div>
+    <nav><a href="/">← Ask AskWRI</a></nav>
+  </header>
+
+  <div id="sim" class="sim" hidden>Includes <b>simulated demand</b> (seed questions). The classification and ranking are real.</div>
+  <div id="stats" class="stats">Loading…</div>
+
+  <div class="types">
+    <div class="type t-not_loaded"><b>Not loaded yet</b><span>WRI published it, but AskWRI can't search it. <b>Data Lab:</b> load the report.</span></div>
+    <div class="type t-weak"><b>Weak coverage</b><span>Answered thinly, or the report didn't cover it. <b>Research teams:</b> update or extend.</span></div>
+    <div class="type t-never_published"><b>No match in catalog</b><span>Nothing in WRI's catalog matches. <b>Leadership:</b> possible new research area.</span></div>
+  </div>
+
+  <div class="filters">
+    <select id="gap" aria-label="Gap type">
+      <option value="">All gap types</option>
+      <option value="not_loaded">Not loaded yet</option>
+      <option value="weak">Weak coverage</option>
+      <option value="never_published">No match in catalog</option>
+    </select>
+    <select id="team" aria-label="Team or office"><option value="">All teams</option></select>
+    <select id="language" aria-label="Language"><option value="">All languages</option></select>
+    <select id="days" aria-label="Time window">
+      <option value="7">Last 7 days</option>
+      <option value="14">Last 14 days</option>
+      <option value="30">Last 30 days</option>
+    </select>
+    <span class="spacer"></span>
+    <button id="export" class="ghost" type="button">Export top 10</button>
+  </div>
+
+  <ol id="cards" class="cards"></ol>
+</main>
+
+<dialog id="dlg">
+  <textarea id="md" readonly aria-label="Top 10 gaps as Markdown"></textarea>
+  <div class="row"><button id="copy" type="button">Copy</button><button id="close" class="ghost" type="button">Close</button></div>
+</dialog>
+
+<script>
+const $=id=>document.getElementById(id);
+const esc=s=>String(s??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const LANGS={en:'English',es:'Spanish',pt:'Portuguese',fr:'French',id:'Indonesian'};
+const ARROW={up:'↑ rising',new:'● new',down:'↓ falling',flat:'→ steady'};
+let facetsLoaded=false;
+
+function params(){
+  const p=new URLSearchParams();
+  for(const k of ['gap','team','language','days']) if($(k).value) p.set(k,$(k).value);
+  return p.toString();
+}
+
+function fillFacets(f){
+  if(facetsLoaded) return; facetsLoaded=true;
+  for(const t of f.teams) $('team').insertAdjacentHTML('beforeend',`<option>${esc(t)}</option>`);
+  for(const l of f.languages) $('language').insertAdjacentHTML('beforeend',`<option value="${esc(l)}">${esc(LANGS[l]||l)}</option>`);
+}
+
+function card(c,i){
+  const where=c.load_next.length
+    ? `<div><b>Load next:</b> ${c.load_next.map(esc).join('; ')}</div>`
+    : c.closest ? `<div class="muted">Closest WRI work: ${esc(c.closest.title)} (${esc(c.closest.year)})${c.closest.loaded?'':' · not loaded'}</div>`
+    : `<div class="muted">No close WRI work found in the catalog.</div>`;
+  const langs=Object.entries(c.languages).map(([l,n])=>`<span class="lang">${esc(LANGS[l]||l)} ${n}</span>`).join('');
+  const foreign=Object.keys(c.languages).some(l=>l!=='en');
+  return `<li class="card">
+    <div class="rank">${c.other?'–':i+1}</div>
+    <div class="head">
+      <span class="name">${esc(c.name)}</span>
+      <span class="count">${c.questions} question${c.questions===1?'':'s'} · ${c.teams.length} team${c.teams.length===1?'':'s'}</span>
+      <span class="trend ${c.trend}">${ARROW[c.trend]}</span>
+      <span class="chip ${c.status}">${esc(c.status_label)}</span>
+    </div>
+    <div class="body">
+      <div class="action"><b>${esc(c.owner)}:</b> ${esc(c.action)}</div>
+      ${where}
+      <div>${langs}${foreign?'<span class="muted"> · non-English demand: consider translating sources</span>':''}</div>
+      <details><summary>Example questions</summary><ul>${c.examples.map(q=>`<li>${esc(q)}</li>`).join('')}</ul>
+        ${c.teams.length?`<div class="muted" style="margin-top:4px">Teams: ${c.teams.map(esc).join(', ')}</div>`:''}</details>
+    </div>
+  </li>`;
+}
+
+async function load(){
+  try{
+    const r=await fetch('/api/radar?'+params());
+    if(!r.ok) throw new Error('status '+r.status);
+    const d=await r.json();
+    fillFacets(d.facets);
+    $('sim').hidden=!d.simulated;
+    const s=d.stats;
+    $('stats').innerHTML=`<span>Last ${d.window_days} days:</span><span><b>${s.questions}</b> questions</span><span><b>${s.answered_pct}%</b> answered well</span><span><b>${s.gaps}</b> gaps</span>`;
+    let rank=0;
+    $('cards').innerHTML=d.clusters.length
+      ? d.clusters.map(c=>card(c,c.other?0:rank++)).join('')
+      : `<li class="empty">No gaps in this view. Ask AskWRI something it can't answer, or run <code>scripts/seed_radar.py</code>.</li>`;
+  }catch(e){
+    $('stats').textContent='Could not load Demand Radar ('+e.message+'). Is the API server running?';
+  }
+}
+
+for(const k of ['gap','team','language','days']) $(k).addEventListener('change',load);
+$('export').addEventListener('click',async()=>{
+  const r=await fetch('/api/radar/export?'+params());
+  $('md').value=r.ok?await r.text():'Export failed (status '+r.status+').';
+  $('dlg').showModal();
+});
+$('copy').addEventListener('click',async()=>{
+  try{await navigator.clipboard.writeText($('md').value);$('copy').textContent='Copied';}
+  catch{$('md').select();}
+  setTimeout(()=>$('copy').textContent='Copy',1500);
+});
+$('close').addEventListener('click',()=>$('dlg').close());
+load();
+</script>
+</body>
+</html>

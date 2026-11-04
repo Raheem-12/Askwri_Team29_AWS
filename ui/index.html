@@ -21,6 +21,9 @@
   .src b{display:block}
   .src small{color:var(--muted)}
   .src blockquote{margin:6px 0 0;color:var(--muted)}
+  .radar{font-size:13px;color:var(--muted);margin-top:6px}
+  .radar a,.top a{color:var(--accent);font-weight:600;text-decoration:none}
+  .top{display:flex;justify-content:space-between;align-items:baseline;gap:12px;flex-wrap:wrap}
   form{position:fixed;left:0;right:0;bottom:0;background:var(--bg);border-top:1px solid var(--line);padding:12px 18px}
   .row{max-width:860px;margin:0 auto;display:flex;gap:8px}
   select,input,button{font:inherit;color:inherit}
@@ -34,21 +37,29 @@
 </head>
 <body>
 <main>
-  <h1>AskWRI</h1>
+  <div class="top"><h1>AskWRI</h1><a href="/radar">Demand Radar →</a></div>
   <p class="sub">Answers come only from WRI publications, and every claim links to its source passage.</p>
   <div id="log"></div>
 </main>
 <form id="f"><div class="row">
   <select id="mode" aria-label="Request type">
-    <option value="">Question</option>
-    <option value="Write a research briefing on: ">Briefing</option>
-    <option value="Where is WRI's work thin, and what could come next, on: ">Gaps</option>
+    <option value="ask">Question</option>
+    <option value="brief">Briefing</option>
+    <option value="gaps">Gaps</option>
+  </select>
+  <select id="team" aria-label="Your team (optional)">
+    <option value="">Team (optional)</option>
+    <option>Cities</option><option>Food</option><option>Forests</option><option>Water</option>
+    <option>Climate</option><option>Energy</option><option>Communications</option>
+    <option>Brazil office</option><option>India office</option><option>Africa office</option>
+    <option>Mexico office</option><option>Indonesia office</option>
   </select>
   <input id="p" aria-label="Your request" placeholder="What has WRI published on electric buses in Latin America?" autocomplete="off" required>
   <button id="go">Ask</button>
 </div></form>
 <script>
-const log=document.getElementById('log'),f=document.getElementById('f'),p=document.getElementById('p'),go=document.getElementById('go'),mode=document.getElementById('mode');
+const log=document.getElementById('log'),f=document.getElementById('f'),p=document.getElementById('p'),go=document.getElementById('go'),mode=document.getElementById('mode'),team=document.getElementById('team');
+const GAP={not_loaded:'not loaded yet (WRI published it, AskWRI can't search it)',weak:'weak coverage',never_published:'no match in WRI's catalog'};
 const esc=s=>String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 let uid=0;
 function render(out){
@@ -57,7 +68,9 @@ function render(out){
   const srcs=out.sources.map(s=>`<div class="src" id="s${id}-${s.n}"><b>[${s.n}] ${s.url?`<a href="${esc(s.url)}" target="_blank" rel="noopener">${esc(s.title)}</a>`:esc(s.title)}</b>
   <small>${[s.year,s.program,s.language,s.page?'p.'+s.page:''].filter(Boolean).map(esc).join(', ')}</small>
   <blockquote>${esc(s.text.slice(0,400))}${s.text.length>400?'…':''}</blockquote></div>`).join('');
-  return `<div class="a ${out.declined?'declined':''}">${html}</div>${srcs}`;
+  const g=out.radar&&out.radar.gap_type;
+  const note=g?`<div class="radar">Logged to <a href="/radar">Demand Radar</a> as ${esc(GAP[g]||g)}.</div>`:'';
+  return `<div class="a ${out.declined?'declined':''}">${html}</div>${note}${srcs}`;
 }
 f.addEventListener('submit',async e=>{
   e.preventDefault();
@@ -66,7 +79,7 @@ f.addEventListener('submit',async e=>{
   d.innerHTML=`<div class="q">${esc(q)}</div><div class="a">Searching WRI publications…</div>`; log.appendChild(d);
   p.value=''; go.disabled=true;
   try{
-    const r=await fetch('/api/chat',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({prompt:mode.value+q})});
+    const r=await fetch('/api/chat',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({prompt:q,mode:mode.value,team:team.value||null})});
     if(!r.ok) throw new Error('Request failed ('+r.status+')');
     d.innerHTML=`<div class="q">${esc(q)}</div>`+render(await r.json());
   }catch(err){ d.lastChild.textContent='Could not reach the service: '+err.message; }

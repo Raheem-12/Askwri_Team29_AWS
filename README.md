@@ -53,6 +53,27 @@ flowchart LR
 2. Specialists search through one tool (AgentCore Gateway). The knowledge base runs hybrid search on Aurora pgvector, then a rerank model reorders results.
 3. The verifier checks each sentence against its cited passage and drops unsupported claims. If too little survives, the answer becomes a decline.
 4. Two chunk types serve different jobs: passage chunks for answers and citations, and document cards (summary plus tags) for discovery, coverage and time-aware answers.
+5. Every question is logged to Demand Radar (no names), which turns the ones AskWRI can't answer well into a ranked list of what WRI should load or research next.
+
+## Demand Radar
+
+Every question AskWRI can't answer well is logged, grouped by topic and ranked, at `/radar`. Not every "no answer" means the same thing, so each gap is sorted by who can fix it:
+
+| Gap type | How it's detected | Action |
+|---|---|---|
+| Not loaded yet | Declined, but the question matches a report in the WRI catalog that isn't in the searchable corpus | Data Lab loads the report |
+| Weak coverage | Answered with a low top retrieval score, or declined although the matching report is loaded | Research teams update or extend the work |
+| No match in catalog | Declined, and nothing in the catalog matches | Research leadership: possible new research area |
+
+Clusters are ranked by questions × distinct teams × trend (this window vs the previous one). The page filters by gap type, team and language, and exports a "Top 10 gaps" summary as Markdown.
+
+Privacy: no names or user ids are stored, only the question (emails and phone numbers removed), an optional team label and the retrieval outcome. Rows older than `RADAR_RETENTION_DAYS` (default 90) are deleted.
+
+Current limits, to replace once the AWS sandbox is available:
+- **Catalog:** `data/catalog.csv` is a small sample. Replace it with metadata (title, year, program, url) for all WRI reports. No full text is needed.
+- **Clustering:** keyword based (TF-IDF), so it can't group questions across languages. Swap in Bedrock multilingual embeddings and one LLM call per cluster for names.
+- **Storage:** SQLite (`data/radar.db`). Move to DynamoDB for the deployed version.
+- **Demo data:** `scripts/seed_radar.py` adds simulated questions (labelled as simulated on the page). The questions are simulated; the classification and ranking are real.
 
 ## Design choices
 
@@ -64,11 +85,12 @@ flowchart LR
 
 ```
 .env.example        Template for the local .env (see below)
-src/askwri/         Strands agents + AgentCore entrypoint (the agent pipeline above)
-api/ ui/            Local FastAPI wrapper and simple chat page for the agents
-scripts/            Corpus tooling: build_manifest, download_corpus, ingest, build_gazetteer
+src/askwri/         Strands agents + AgentCore entrypoint, plus Demand Radar (radar, catalog, text)
+api/ ui/            Local FastAPI wrapper, simple chat page for the agents, and the /radar page
+scripts/            Corpus tooling: build_manifest, download_corpus, ingest, build_gazetteer, seed_radar
 eval/               Evaluation questions and runner
-data/               Manifests and URL lists (data/raw/ is local only, git-ignored)
+tests/              Demand Radar tests
+data/               Manifests, URL lists, Radar's catalog (data/raw/ and radar.db are local only)
 prototype/
   backend/          FastAPI service: cited Q&A, map locations, place glances, briefings, graph
   frontend/         Vite + Three.js globe UI with pins, glance cards and the connection map
@@ -95,6 +117,20 @@ Follow [`docs/guardrails-setup.md`](docs/guardrails-setup.md) to create the Bedr
 ## Sample data mode
 
 While there is no Knowledge Base, `DEMO_MODE=true` serves invented passages, all titled "SAMPLE", under a permanent banner. They go through the same verification code as real answers. When the Knowledge Base is ready, follow [`docs/knowledge-base-handoff.md`](docs/knowledge-base-handoff.md) and set `DEMO_MODE=false`.
+
+## Run the agents app locally (no AWS needed)
+
+This is the original chat page in `api/` + `ui/`, with `ASKWRI_MOCK=1` standing in for Bedrock. For the globe, see Setup below.
+
+```bash
+pip install fastapi uvicorn pytest httpx
+export ASKWRI_MOCK=1                      # keyword search over the manifest titles instead of Bedrock
+python scripts/seed_radar.py --reset      # optional: simulated demand for the demo
+uvicorn api.server:app --reload           # open http://localhost:8000 and http://localhost:8000/radar
+python -m pytest -q tests
+```
+
+On Windows PowerShell use `$env:ASKWRI_MOCK = "1"` instead of `export`.
 
 ## Setup
 

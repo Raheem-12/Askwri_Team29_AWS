@@ -18,3 +18,5 @@ dist/
 
 # OS
 .DS_Store
+data/radar.db
+.pytest_cache/

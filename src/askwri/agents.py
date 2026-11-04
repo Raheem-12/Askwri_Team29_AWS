@@ -7,7 +7,7 @@ from . import retrieval
 
 MODEL_ID = os.getenv("MODEL_ID", "us.anthropic.claude-sonnet-4-5-20250929-v1:0")
 
-DECLINE = "I couldn't find anything in the WRI publications I have that supports an answer to that."
+DECLINE = retrieval.DECLINE
 
 RULES = f"""Only use the passages your search tool returns. No outside knowledge.
 End every factual sentence with the passage number, like [2] or [1][3].
