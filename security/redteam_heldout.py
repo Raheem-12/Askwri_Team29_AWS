@@ -37,5 +37,5 @@ md = ["# AskWRI held-out red-team (guardrail v%s)" % os.environ.get("GUARDRAIL_V
 md += [f"| {a} | {b} | {c} | {d} |" for a, b, c, d in rows]
 md += ["", "| Benign question | Result | Triggered by |", "|---|---|---|"]
 md += [f"| {q[:80]} | {r} | {t} |" for q, r, t in brows]
-open("docs/security/redteam_heldout_v1.md", "w").write("\n".join(md) + "\n")
+open("docs/security/redteam_heldout_tuning_v3.md", "w").write("\n".join(md) + "\n")
 print("\n".join(md))
