@@ -35,6 +35,8 @@ for label, q, is_attack in CASES:
     rows.append((label, code, status, verdict, j.get("answer", "")[:110].replace("|", "/")))
     print(f"{label}: HTTP {code} status={status} -> {verdict}")
     time.sleep(2)
+if any(r[1] == 0 for r in rows):
+    sys.exit("Server not reachable: no report written")
 md = ["# Pipeline red-team through /api/ask (demo mode, SAMPLE data)", "",
       "Checks the answer and claim text only. The `topic` field echoes the question, so it is ignored.", "",
       "| Case | HTTP | Status | Verdict | Answer (truncated) |", "|---|---|---|---|---|"]
