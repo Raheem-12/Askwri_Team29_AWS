@@ -4,6 +4,8 @@ This is the step-by-step setup for the safety layer. AskWRI uses **Amazon Bedroc
 
 > Status: created in the team sandbox (account `390190675482`, us-east-1) as guardrail **`ne8dji5ugt8j`**. **Use version `2`** (the tested one). Put `GUARDRAIL_ID=ne8dji5ugt8j` and `GUARDRAIL_VERSION=2` in `.env`. The commands below are for recreating it in another account.
 
+> Two guardrail configs are in the repo. The live guardrail above was built from `docs/guardrail.json`. `infra/guardrail.json` came from the security branch and differs: it adds a topic blocking requests for system internals, but it also turns on the Relevance filter, which section 4b found refuses good answers. Agree on one before creating another guardrail from either.
+
 ## 1. What is protected, and where
 
 ```

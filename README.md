@@ -94,6 +94,7 @@ data/               Manifests, URL lists, Radar's catalog (data/raw/ and radar.d
 prototype/
   backend/          FastAPI service: cited Q&A, map locations, place glances, briefings, graph
   frontend/         Vite + Three.js globe UI with pins, glance cards and the connection map
+infra/              S3 TLS bucket policy and a guardrail config (from the security branch)
 docs/               Setup guides: guardrails-setup.md, knowledge-base-handoff.md (plus WRI.pdf)
 ```
 
