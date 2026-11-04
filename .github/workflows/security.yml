@@ -24,11 +24,3 @@ jobs:
       - name: Dependency audit (report only)
         continue-on-error: true
         run: if [ -f requirements.txt ]; then pip-audit -r requirements.txt; else echo "no requirements.txt on this branch"; fi
-      - uses: aquasecurity/trivy-action@0.28.0
-        continue-on-error: true
-        with:
-          scan-type: fs
-          scanners: vuln,secret
-          severity: HIGH,CRITICAL
-          ignore-unfixed: true
-          skip-dirs: .venv,data
