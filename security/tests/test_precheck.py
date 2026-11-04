@@ -26,3 +26,9 @@ def test_reversed_payload_blocked():
 
 def test_control_chars_stripped():
     assert precheck("hello\x00 world")[2] == "hello world"
+
+def test_hex_payload_blocked():
+    assert precheck(ATTACK.encode().hex())[1] == "hex"
+
+def test_normal_numbers_not_hex_blocked():
+    assert precheck("Aqueduct 4.0 covers 189 countries and 2023 data")[0]

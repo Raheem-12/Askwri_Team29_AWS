@@ -1,0 +1,5 @@
+[extend]
+useDefault = true
+[allowlist]
+description = "Intentional fake credentials used as red-team test strings"
+paths = ['''security/sets/.*''', '''security/redteam_.*''', '''docs/security/.*''']

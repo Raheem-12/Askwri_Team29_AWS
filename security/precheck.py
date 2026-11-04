@@ -18,6 +18,18 @@ def has_encoded_payload(text):
             return True
     return False
 
+HEX = re.compile(r"(?:[0-9a-fA-F]{2}){16,}")
+
+def has_hex_payload(text):
+    for m in HEX.findall(text):
+        try:
+            d = bytes.fromhex(m).decode("utf-8")
+        except Exception:
+            continue
+        if d.isprintable() and " " in d:
+            return True
+    return False
+
 def precheck(text):
     """Return (ok, reason, cleaned_text)."""
     t = CTRL.sub("", (text or "").strip())
@@ -25,6 +37,8 @@ def precheck(text):
         return False, "length", ""
     if has_encoded_payload(t):
         return False, "base64", ""
+    if has_hex_payload(t):
+        return False, "hex", ""
     for name, variant in (("rot13", codecs.decode(t, "rot_13")), ("reversed", t[::-1])):
         if INJECTION.search(variant):
             return False, name, ""
