@@ -1,5 +1,6 @@
 import { forceSimulation, forceLink, forceManyBody, forceCenter, forceCollide, forceX, forceY } from 'd3-force';
 import { $, el, safeURL, externalLink } from './util.js';
+import { t } from './i18n.js';
 
 // Colours for data marks only (topic -> hue). Everything else comes from CSS tokens.
 const TOPIC_COLORS = {
@@ -29,7 +30,7 @@ export function neighborIds(id, links) {
 
 export function createGraph(host, { onAsk, reduced = false }) {
   const canvas = el('canvas');
-  canvas.setAttribute('aria-label', 'Research connection map. Use the publication list for a text alternative.');
+  canvas.setAttribute('aria-label', t('graph.canvas'));
   host.prepend(canvas);
   const ctx = canvas.getContext('2d');
   const tooltip = $('graph-tooltip'), info = $('graph-info');
@@ -138,15 +139,15 @@ export function createGraph(host, { onAsk, reduced = false }) {
     if (!n || n.type !== 'publication') { info.hidden = true; return; }
     const url = safeURL(n.url);
     const close = el('button', '×', 'icon-button');
-    close.type = 'button'; close.setAttribute('aria-label', 'Close details');
+    close.type = 'button'; close.setAttribute('aria-label', t('graph.close'));
     close.addEventListener('click', () => { selected = null; info.hidden = true; schedule(); });
-    const ask = el('button', 'Ask about this', 'primary small');
+    const ask = el('button', t('graph.ask'), 'primary small');
     ask.type = 'button';
-    ask.addEventListener('click', () => onAsk(`What does WRI research say about "${n.label}"?`));
-    const meta = [n.program, n.year].filter(Boolean).join(' · ') + (n.sample ? ' · SAMPLE (not WRI research)' : '');
+    ask.addEventListener('click', () => onAsk(t('graph.ask_q', { label: n.label })));
+    const meta = [n.program, n.year].filter(Boolean).join(' · ') + (n.sample ? ' · ' + t('graph.sample') : '');
     const actions = el('div', '', 'graph-actions');
     actions.append(ask);
-    if (url) actions.append(externalLink('Open publication ↗', url.href));
+    if (url) actions.append(externalLink(t('source.open'), url.href));
     info.replaceChildren(close, el('h3', n.label), el('p', meta, 'muted'), actions);
     info.hidden = false;
   }

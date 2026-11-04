@@ -26,6 +26,7 @@ To serve everything from the backend instead: `npm run build`, and the backend s
 - **Panels never cover the globe:** when the answer panel or card opens, the globe shifts and zooms out just enough to stay fully visible in the free space.
 - **Briefing page:** `briefing.html?place=…&topic=…` shows an overview, key findings and related publications, all cited. The topic in the link is the PII-masked question from the server, never the raw text.
 - **Connections view:** an Obsidian-style map. Topic hubs link to publications; dashed lines link publications that share title terms (hover a line to see why); gold rings mark sources cited in your latest answer. Drag nodes, scroll to zoom, double-click to refit.
+- **Languages:** English, Español, Português, Français, Bahasa Indonesia, हिन्दी and 中文, picked beside the question box (and in the briefing header). The whole interface switches in place and the choice is remembered. Answers come back written in that language by the model, while every quote stays word for word in the source's original language with a labeled machine translation underneath, so the evidence can still be checked. Switching language with an answer on screen offers to re-run it. Briefing links carry `?lang=`. Sample-data mode can't translate (its passages are canned English) and says so.
 - **Demand Radar:** questions asked here feed the team's Radar page (`/radar`), with an optional team label. The answer panel says when a question was logged. See the root README.
 - **Honest states:** loading, refusal ("insufficient evidence"), out-of-scope, errors with retry. A permanent banner marks sample data. The UI never fabricates an answer.
 - **Accessibility:** skip link, live-region announcements, reduced-motion support, keyboard operation. Phones get bottom sheets instead of side panels.
@@ -35,7 +36,7 @@ Without WebGL the globe shows a message; search, answers, the places list and br
 ## Tests
 
 ```bash
-npm test            # 23 unit/UI tests (jsdom, no browser needed)
+npm test            # 41 unit/UI tests (jsdom, no browser needed), incl. translation checks
 npm run build       # production bundle
 
 # Optional: real Chrome end-to-end check with REAL mouse clicks on pins.
@@ -57,6 +58,7 @@ node tests/e2e-browser.mjs          # set CHROME=/path/to/chrome if not on macOS
 | `src/glance.js` | The docked card, summary, follow-ups |
 | `src/graph.js` | The connection map (canvas + `d3-force`) |
 | `src/render.js` | Cited claims and sources (all text via `textContent`) |
+| `src/i18n.js`, `src/locales/*.js` | Interface translation. `en.js` is the source of truth; every locale must have the same keys (`tests/i18n.test.mjs`) |
 | `src/api.js`, `src/util.js`, `src/geo.js` | Backend client, small helpers, lat/lon math |
 | `src/styles.css` | All styling |
 | `public/textures/` | Earth textures |

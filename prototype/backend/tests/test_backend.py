@@ -370,3 +370,92 @@ def test_graph_has_topic_hubs_and_deduplicated_publications():
     ids = {n['id'] for n in data['nodes']}
     assert all(e['source'] in ids and e['target'] in ids and e['reason'] for e in data['edges'])
     assert {'topic', 'related'} <= {e['kind'] for e in data['edges']}
+
+
+# ------------------------------------------------------------ answer language
+class CapturingGenerator:
+    """Records the system prompt and replies with a Spanish claim backed by an English quote."""
+
+    def __init__(self):
+        self.systems = []
+
+    def converse(self, system=None, **_):
+        self.systems.append(system[0]['text'])
+        body = {'answerable': True,
+                'claims': [{'text': 'Las inundaciones saturan el drenaje.',
+                            'evidence': [{'source_id': 'S1', 'quote': GOOD_QUOTE,
+                                          'translation': 'las inundaciones saturan el drenaje'}]}],
+                'locations': [{'name': 'Jakarta', 'issue': 'Inundaciones urbanas', 'source_id': 'S1',
+                               'quote': 'In Jakarta, Indonesia, flooding strains drainage'}]}
+        return {'output': {'message': {'content': [{'text': json.dumps(body)}]}}}
+
+
+class OnePassageRetriever:
+    def retrieve(self, **_):
+        return {'retrievalResults': [{'content': {'text': PASSAGE}, 'score': 0.8,
+                                      'metadata': {'title': 'T', '_excerpt_page_number': 3}}]}
+
+
+def live(monkeypatch):
+    for name, value in (('AWS_REGION', 'us-east-1'), ('BEDROCK_KB_ID', 'kb'), ('BEDROCK_MODEL_ID', 'm')):
+        monkeypatch.setenv(name, value)
+    generator = CapturingGenerator()
+    monkeypatch.setattr(backend, 'clients', lambda: (OnePassageRetriever(), generator, None, 'kb', 'm'))
+    return generator
+
+
+def test_english_prompt_is_unchanged():
+    assert backend.with_language(backend.SYSTEM_ASK, 'en') == backend.SYSTEM_ASK
+
+
+def test_other_languages_translate_claims_but_never_quotes():
+    prompt = backend.with_language(backend.SYSTEM_ASK, 'pt')
+    assert 'Brazilian Portuguese' in prompt and 'never translate a quote' in prompt
+    assert '"translation"' in prompt and '{{' not in prompt  # the f-string braces rendered
+
+
+def test_translated_claim_with_original_quote_passes_verification(monkeypatch):
+    generator = live(monkeypatch)
+    body = TestClient(backend.app).post('/api/ask', json={'question': 'Inundaciones en Yakarta?',
+                                                          'language': 'es'}).json()
+    assert 'Spanish' in generator.systems[0]
+    assert body['status'] == 'answered' and body['language'] == 'es' and body['requested_language'] == 'es'
+    assert body['claims'][0]['text'].startswith('Las inundaciones')
+    assert body['claims'][0]['evidence'][0]['quote'] == GOOD_QUOTE  # still verbatim English
+    assert body['claims'][0]['evidence'][0]['translation'] == 'las inundaciones saturan el drenaje'
+    assert body['locations'][0]['name'] == 'Jakarta'
+
+
+def test_quote_translation_is_never_used_for_verification():
+    bad = payload()
+    bad['claims'][0]['evidence'][0] = {'source_id': 'S1', 'quote': 'texto que el pasaje no contiene',
+                                       'translation': GOOD_QUOTE}
+    assert backend.validate_answer(bad, SOURCES)['status'] == 'insufficient_evidence'
+
+
+def test_glance_and_briefing_pass_the_language_to_the_model(monkeypatch):
+    generator = live(monkeypatch)
+    client = TestClient(backend.app)
+    client.post('/api/glance', json={'place': 'Jakarta', 'language': 'fr'})
+    client.post('/api/briefing', json={'place': 'Jakarta', 'language': 'zh'})
+    assert 'French' in generator.systems[0] and 'Simplified Chinese' in generator.systems[1]
+
+
+def test_language_defaults_to_english(monkeypatch):
+    generator = live(monkeypatch)
+    body = TestClient(backend.app).post('/api/ask', json={'question': 'flooding in Jakarta?'}).json()
+    assert body['language'] == 'en' and 'OUTPUT LANGUAGE' not in generator.systems[0]
+
+
+def test_unknown_language_is_rejected(monkeypatch):
+    live(monkeypatch)
+    response = TestClient(backend.app).post('/api/ask', json={'question': 'flooding?', 'language': 'xx'})
+    assert response.status_code == 422
+
+
+def test_demo_mode_says_answers_stay_in_english(monkeypatch):
+    monkeypatch.setenv('DEMO_MODE', 'true')
+    client = TestClient(backend.app)
+    assert 'hi' in client.get('/api/status').json()['languages']
+    body = client.post('/api/ask', json={'question': 'electric buses in cities', 'language': 'es'}).json()
+    assert body['language'] == 'en' and body['requested_language'] == 'es'

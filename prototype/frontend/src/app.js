@@ -4,6 +4,7 @@ import { indexSources, validClaims, renderClaims, renderSources, copyableText } 
 import { createPins } from './pins.js';
 import { createGlance } from './glance.js';
 import { createGraph } from './graph.js';
+import { t, tn, getLanguage, languageName, onLanguageChange } from './i18n.js';
 
 const noop = () => {};
 const NO_GLOBE = {
@@ -11,7 +12,7 @@ const NO_GLOBE = {
   reset: noop, zoomBy: noop, toggleRotation: () => false, rotating: false
 };
 const MOBILE = '(max-width: 760px)';
-const GAP_LABELS = { not_loaded: 'not loaded yet', weak: 'weak coverage', never_published: 'no match in WRI’s catalog' };
+const GAP_KEYS = { not_loaded: 'gap.not_loaded', weak: 'gap.weak', never_published: 'gap.never_published' };
 
 export function cleanPlaces(list) {
   return (Array.isArray(list) ? list : [])
@@ -24,7 +25,8 @@ export function cleanPlaces(list) {
 export function initApp({ globe = null, api = defaultApi } = {}) {
   const g = globe || NO_GLOBE;
   const stage = $('stage'), panel = $('answer-panel'), glanceEl = $('glance');
-  const state = { places: new Map(), lookup: null, topic: null, sources: [], busy: false, view: 'globe', holding: false };
+  const state = { places: new Map(), lookup: null, topic: null, sources: [], busy: false, view: 'globe', holding: false,
+    lastQuestion: null, answerLanguage: null };
   let lastCopy = '', copyTimer, graph = null, graphLoaded = false;
 
   // ---------------------------------------------------------------- layout
@@ -127,7 +129,7 @@ export function initApp({ globe = null, api = defaultApi } = {}) {
       const b = el('button', '', 'chip');
       b.type = 'button';
       b.append(el('span', p.name), el('span', String(p.issues.length), 'chip-count'));
-      b.setAttribute('aria-label', `${p.name}: ${p.issues.length} ${p.issues.length === 1 ? 'issue' : 'issues'}. Open summary.`);
+      b.setAttribute('aria-label', tn('place.chip', p.issues.length, { name: p.name }));
       b.addEventListener('click', () => selectPlace(p.id));
       return b;
     }));
@@ -138,7 +140,7 @@ export function initApp({ globe = null, api = defaultApi } = {}) {
   function resetAnswerUI() {
     lastCopy = '';
     $('copy-answer').hidden = true;
-    $('copy-label').textContent = 'Copy';
+    $('copy-label').textContent = t('copy');
     clearTimeout(copyTimer);
   }
 
@@ -152,12 +154,35 @@ export function initApp({ globe = null, api = defaultApi } = {}) {
   // People should be able to see that their question was recorded.
   function appendRadarNote(data) {
     if (!data.radar) return;
-    const label = GAP_LABELS[data.radar.gap_type];
-    const note = el('p', label ? 'Logged without your name to ' : 'Question logged without your name to ', 'radar-note');
-    const link = el('a', 'Demand Radar');
+    const key = GAP_KEYS[data.radar.gap_type];
+    const note = el('p', t(key ? 'radar.before_gap' : 'radar.before'), 'radar-note');
+    const link = el('a', t('radar.link'));
     link.href = '/radar';
-    note.append(link, label ? ` as ${label}.` : '.');
+    note.append(link, key ? t('radar.after_gap', { label: t(key) }) : t('radar.after'));
     $('answer-body').append(note);
+  }
+
+  // Says which language the claims are in, and that the quotes are the original words.
+  // Sample mode can't write in another language, so it says that instead.
+  function appendLanguageNote(data) {
+    const asked = data.requested_language || getLanguage();
+    if (asked === 'en') return;
+    const written = data.language || 'en';
+    const text = written === 'en' ? t('translation.demo', { lang: languageName(asked) })
+      : t('translation.note', { lang: languageName(written) });
+    $('answer-body').append(el('p', text, 'translation-note'));
+  }
+
+  // After a language switch the answer on screen is still in the old language. Offer to
+  // re-run it rather than silently spending another model call.
+  function offerRerun() {
+    $('rerun-language')?.remove();
+    if (!state.lastQuestion || state.busy || state.answerLanguage === getLanguage()) return;
+    const button = el('button', t('translation.rerun', { lang: languageName(getLanguage()) }), 'link-button rerun');
+    button.type = 'button';
+    button.id = 'rerun-language';
+    button.addEventListener('click', () => { question.value = state.lastQuestion; submit(); });
+    $('answer-body').prepend(button);
   }
 
   function renderAnswer(data, question) {
@@ -165,51 +190,58 @@ export function initApp({ globe = null, api = defaultApi } = {}) {
     state.topic = data.topic || null;
     state.sources = [];
     state.lookup = null;
-    $('answer-heading').textContent = 'Answer';
+    state.lastQuestion = question;
+    state.answerLanguage = data.requested_language || getLanguage();
+    $('answer-heading').textContent = t('answer.heading');
     document.body.dataset.hasAnswer = 'true';
+    // The server's own message is English; outside English the page's wording is used instead.
+    const english = getLanguage() === 'en';
     if (data.status === 'out_of_scope') {
-      showMessage('Outside what AskWRI covers', data.answer || 'Try a question about WRI research topics.');
+      showMessage(t('scope.title'), (english && data.answer) || t('scope.default'));
       showPlaces([]);
-      announce('That question is outside what AskWRI covers.');
+      announce(t('scope.announce'));
       return;
     }
     if (data.status === 'insufficient_evidence') {
-      showMessage('Insufficient evidence in the sample',
-        (typeof data.answer === 'string' && data.answer) || 'The retrieved passages do not support an answer to this question.');
-      $('answer-body').append(el('p', 'Try narrowing the question or checking which publications are included.', 'state-message'));
+      showMessage(t('insufficient.title'),
+        (english && typeof data.answer === 'string' && data.answer) || t('insufficient.default'));
+      $('answer-body').append(el('p', t('insufficient.hint'), 'state-message'));
       appendRadarNote(data);
       showPlaces([]);
-      announce('Insufficient evidence in the sample.');
+      announce(t('insufficient.announce'));
       return;
     }
-    if (!validClaims(data.claims)) throw new Error('The server returned an answer without valid claim-level citations. Please try again.');
+    if (!validClaims(data.claims)) throw new Error(t('answer.bad_citations'));
     const { lookup, list } = indexSources(data.sources, 'evidence');
     state.lookup = lookup;
     state.sources = list;
     const body = document.createDocumentFragment();
     body.append(el('p', question, 'result-query'), renderClaims(data.claims, lookup));
     $('answer-body').replaceChildren(body);
+    appendLanguageNote(data);
     appendRadarNote(data);
     $('sources-section').hidden = false;
     $('sources').replaceChildren(list.length ? renderSources(list, data.claims)
-      : el('p', 'The response did not include source details. Treat the answer as unverified.', 'state-message'));
-    $('source-count').textContent = `${list.length} ${list.length === 1 ? 'source' : 'sources'}`;
+      : el('p', t('answer.no_sources'), 'state-message'));
+    $('source-count').textContent = tn('sources.count', list.length);
     lastCopy = copyableText(data.claims, lookup, list);
     $('copy-answer').hidden = false;
     const places = cleanPlaces(data.locations);
     showPlaces(places);
-    announce(`Research answer ready. ${list.length} sources returned. ${places.length} ${places.length === 1 ? 'place' : 'places'} on the globe.`);
+    announce(t('answer.ready', { n: list.length }) + ' ' + tn('answer.ready_places', places.length));
     if (graph) graph.highlight(list);
   }
 
   const form = $('ask-form'), question = $('question');
-  if (window.matchMedia(MOBILE).matches) question.placeholder = 'Ask a question…'; // the long one wraps and clips
+  // the long placeholder wraps and clips on phones
+  const setPlaceholder = () => { if (window.matchMedia(MOBILE).matches) question.placeholder = t('question.placeholder_short'); };
+  setPlaceholder();
   function setBusy(busy) {
     state.busy = busy;
     $('ask-button').disabled = busy;
     question.readOnly = busy;
     document.querySelectorAll('[data-question]').forEach(b => { b.disabled = busy; });
-    $('ask-button-text').textContent = busy ? 'Searching…' : 'Find evidence';
+    $('ask-button-text').textContent = t(busy ? 'ask.busy' : 'ask.button');
     $('search-progress').hidden = !busy;
     $('answer-panel').setAttribute('aria-busy', String(busy));
     document.body.dataset.state = busy ? 'searching' : 'idle';
@@ -220,26 +252,26 @@ export function initApp({ globe = null, api = defaultApi } = {}) {
     if (state.view !== 'globe') setView('globe'); // answers and pins live on the globe view
     const text = question.value.trim();
     if (text.length < 3) {
-      question.setCustomValidity('Enter a research question with at least 3 characters.');
+      question.setCustomValidity(t('question.too_short'));
       question.reportValidity();
       return;
     }
     setBusy(true);
     resetAnswerUI();
-    announce('Searching WRI publications.');
+    announce(t('search.announce'));
     setPanel(true);
-    $('answer-body').replaceChildren(el('div', '', 'loader'), el('h3', 'Finding supporting evidence…', 'state-title'),
-      el('p', 'Searching the publication sample and preparing a cited answer.', 'state-message'));
+    $('answer-body').replaceChildren(el('div', '', 'loader'), el('h3', t('search.loading_title'), 'state-title'),
+      el('p', t('search.loading_text'), 'state-message'));
     try {
-      renderAnswer(await api.ask(text, $('team').value || undefined), text);
+      renderAnswer(await api.ask(text, $('team').value || undefined, getLanguage()), text);
     } catch (error) {
       resetAnswerUI();
-      showMessage('We couldn’t complete this search', error.message || 'Check your connection and try again.', 'error-title');
-      const retry = el('button', 'Try again', 'link-button');
+      showMessage(t('search.failed_title'), error.message || t('search.failed_default'), 'error-title');
+      const retry = el('button', t('retry'), 'link-button');
       retry.type = 'button';
       retry.addEventListener('click', submit);
       $('answer-body').append(retry);
-      announce('Search failed. Your question is preserved for retry.');
+      announce(t('search.failed_announce'));
     } finally {
       setBusy(false);
     }
@@ -265,19 +297,19 @@ export function initApp({ globe = null, api = defaultApi } = {}) {
   $('copy-answer').addEventListener('click', async () => {
     try {
       await navigator.clipboard.writeText(lastCopy);
-      $('copy-label').textContent = 'Copied';
-      announce('Answer and publication references copied.');
+      $('copy-label').textContent = t('copied');
+      announce(t('copy.done_announce'));
     } catch {
-      $('copy-label').textContent = 'Select text to copy';
-      announce('Clipboard access unavailable. Select the answer text and copy it manually.');
+      $('copy-label').textContent = t('copy.manual');
+      announce(t('copy.failed_announce'));
     }
     clearTimeout(copyTimer);
-    copyTimer = setTimeout(() => { $('copy-label').textContent = 'Copy'; }, 2500);
+    copyTimer = setTimeout(() => { $('copy-label').textContent = t('copy'); }, 2500);
   });
 
   // ---------------------------------------------------------------- globe controls
   const rotate = $('globe-rotate');
-  const syncRotate = () => { rotate.setAttribute('aria-pressed', String(g.rotating)); rotate.title = g.rotating ? 'Pause rotation' : 'Resume rotation'; };
+  const syncRotate = () => { rotate.setAttribute('aria-pressed', String(g.rotating)); rotate.title = t(g.rotating ? 'controls.pause' : 'controls.resume'); };
   syncRotate();
   $('globe-in').addEventListener('click', () => g.zoomBy(0.8));
   $('globe-out').addEventListener('click', () => g.zoomBy(1.25));
@@ -296,7 +328,7 @@ export function initApp({ globe = null, api = defaultApi } = {}) {
       reduced: prefersReducedMotion(),
       onAsk: text => { setView('globe'); question.value = text; question.dispatchEvent(new Event('input')); submit(); }
     });
-    $('graph-status').textContent = 'Loading connections…';
+    $('graph-status').textContent = t('graph.loading');
     try {
       const data = await api.graph();
       graph.load(data);
@@ -306,7 +338,7 @@ export function initApp({ globe = null, api = defaultApi } = {}) {
       $('graph-list').replaceChildren(...data.nodes.filter(n => n.type === 'publication').map(n =>
         el('li', `${n.label} (${[n.program, n.year].filter(Boolean).join(', ')})`)));
     } catch (error) {
-      $('graph-status').textContent = error.message || 'Could not load the connection map.';
+      $('graph-status').textContent = error.message || t('graph.failed');
     }
   }
 
@@ -339,18 +371,30 @@ export function initApp({ globe = null, api = defaultApi } = {}) {
       $('guardrail-note').hidden = data.guardrails === true;
       if (data.configured === true) {
         dot.dataset.state = 'ready';
-        text.textContent = data.demo ? 'Sample data mode'
-          : data.connection_verified === true ? 'Research connection verified' : 'Configured · Connection will be checked when you search.';
+        text.textContent = t(data.demo ? 'status.demo'
+          : data.connection_verified === true ? 'status.verified' : 'status.configured');
       } else {
         dot.dataset.state = 'checking';
         const missing = Array.isArray(data.missing) ? data.missing.filter(x => typeof x === 'string').join(', ') : '';
-        text.textContent = 'Setup needed' + (missing ? ' · ' + missing : '') + '. Follow your project setup instructions.';
+        text.textContent = t('status.setup') + (missing ? ' · ' + missing : '') + t('status.setup_tail');
       }
     } catch {
       dot.dataset.state = 'error';
-      text.textContent = 'Connection status unavailable · Check that your FastAPI server is running.';
+      text.textContent = t('status.unavailable');
     }
   }
+
+  // Static text is re-translated by i18n.translatePage; these are the bits set from code.
+  const stopListening = onLanguageChange(() => {
+    // a page that has been torn down (tests boot many) must not be updated
+    if (!stage.isConnected || stage.ownerDocument !== document) { stopListening(); return; }
+    if (!state.busy) $('ask-button-text').textContent = t('ask.button');
+    $('copy-label').textContent = t('copy');
+    setPlaceholder();
+    syncRotate();
+    offerRerun();
+    checkStatus();
+  });
 
   setPanel(false);
   glanceEl.inert = true;

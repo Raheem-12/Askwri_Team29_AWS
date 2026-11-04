@@ -6,10 +6,10 @@
 <meta name="theme-color" content="#0d2923">
 <meta name="color-scheme" content="dark">
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 viewBox=%270 0 24 24%27 fill=%27none%27 stroke=%27%23e3bc5b%27 stroke-width=%271.8%27 stroke-linecap=%27round%27 stroke-linejoin=%27round%27%3E%3Cpath d=%27M19 4C8 3 3 8 5 14c2 6 12 5 14-10Z%27/%3E%3Cpath d=%27M4 21 15 10%27/%3E%3C/svg%3E">
-<title>AskWRI — A world of research</title>
+<title data-i18n="app.title">AskWRI — A world of research</title>
 </head>
 <body data-view="globe" data-state="idle">
-<a class="skip" href="#question">Skip to the question box</a>
+<a class="skip" href="#question" data-i18n="skip.question">Skip to the question box</a>
 <svg aria-hidden="true" style="position:absolute;width:0;height:0;overflow:hidden"><defs>
 <symbol id="i-leaf" viewBox="0 0 24 24"><path d="M19 4C8 3 3 8 5 14c2 6 12 5 14-10Z"/><path d="M4 21 15 10"/></symbol>
 <symbol id="i-arrow" viewBox="0 0 24 24"><path d="M5 12h14m-6-6 6 6-6 6"/></symbol>
@@ -23,118 +23,124 @@
 </defs></svg>
 
 <div id="stage" style="--inset-l:0px;--inset-r:0px">
-  <div id="globe-viewport" tabindex="0" role="group"
+  <div id="globe-viewport" tabindex="0" role="group" data-i18n-attr="aria-label:globe.aria"
        aria-label="Interactive 3D Earth. Drag to rotate, scroll or pinch to zoom. Arrow keys rotate; plus and minus zoom.">
     <div id="globe-message" role="status" hidden></div>
   </div>
-  <div id="pin-layer" role="group" aria-label="Places mentioned in the sources"></div>
+  <div id="pin-layer" role="group" aria-label="Places mentioned in the sources" data-i18n-attr="aria-label:pins.aria"></div>
   <svg id="leader" aria-hidden="true"><line id="leader-line" style="opacity:0"/></svg>
 
   <header class="topbar">
     <div class="brand"><svg aria-hidden="true"><use href="#i-leaf"/></svg><span>AskWRI</span></div>
-    <nav class="view-toggle" aria-label="View">
-      <button id="view-globe" type="button" aria-pressed="true">Globe</button>
-      <button id="view-graph" type="button" aria-pressed="false">Connections</button>
-      <a id="radar-link" href="/radar">Radar</a>
+    <nav class="view-toggle" aria-label="View" data-i18n-attr="aria-label:nav.aria">
+      <button id="view-globe" type="button" aria-pressed="true" data-i18n="nav.globe">Globe</button>
+      <button id="view-graph" type="button" aria-pressed="false" data-i18n="nav.connections">Connections</button>
+      <a id="radar-link" href="/radar" data-i18n="nav.radar">Radar</a>
     </nav>
     <div class="status" id="connection" data-state="checking" role="status">
-      <span class="dot" aria-hidden="true"></span><span id="connection-text">Checking connection…</span>
+      <span class="dot" aria-hidden="true"></span><span id="connection-text" data-i18n="status.checking">Checking connection…</span>
     </div>
   </header>
 
   <div class="top-stack" id="top-stack">
     <div class="notices">
-      <p id="demo-banner" hidden><strong>Sample data.</strong> These answers are invented placeholders, not WRI research.</p>
-      <p id="guardrail-note" hidden>Safety filters are off: PII masking and topic limits are not active. See docs/guardrails-setup.md.</p>
+      <p id="demo-banner" hidden><strong data-i18n="demo.label">Sample data.</strong> <span data-i18n="demo.text">These answers are invented placeholders, not WRI research.</span></p>
+      <p id="guardrail-note" hidden data-i18n="guardrail.off">Safety filters are off: PII masking and topic limits are not active. See docs/guardrails-setup.md.</p>
     </div>
-    <section id="intro" aria-label="Introduction">
-      <h1>A world of research.</h1>
-      <p>Ask a question. See where WRI’s research points.</p>
+    <section id="intro" aria-label="Introduction" data-i18n-attr="aria-label:intro.aria">
+      <h1 data-i18n="intro.title">A world of research.</h1>
+      <p data-i18n="intro.text">Ask a question. See where WRI’s research points.</p>
     </section>
   </div>
 
   <aside id="answer-panel" aria-labelledby="answer-heading" aria-hidden="true" inert>
     <header class="panel-head">
-      <h2 id="answer-heading">Answer</h2>
+      <h2 id="answer-heading" data-i18n="answer.heading">Answer</h2>
       <div class="panel-actions">
-        <button type="button" class="ghost" id="copy-answer" hidden><svg aria-hidden="true"><use href="#i-copy"/></svg><span id="copy-label">Copy</span></button>
-        <button type="button" class="icon-button" id="answer-close" aria-label="Close answer"><svg aria-hidden="true"><use href="#i-close"/></svg></button>
+        <button type="button" class="ghost" id="copy-answer" hidden><svg aria-hidden="true"><use href="#i-copy"/></svg><span id="copy-label" data-i18n="copy">Copy</span></button>
+        <button type="button" class="icon-button" id="answer-close" aria-label="Close answer" data-i18n-attr="aria-label:answer.close"><svg aria-hidden="true"><use href="#i-close"/></svg></button>
       </div>
     </header>
     <div class="panel-scroll">
       <div id="answer-body"></div>
       <section id="places-section" hidden>
-        <h3 class="section-label">Places in these sources</h3>
+        <h3 class="section-label" data-i18n="places.heading">Places in these sources</h3>
         <div id="places" class="chips"></div>
       </section>
       <section id="sources-section" hidden>
-        <h3 class="section-label">Sources <span id="source-count" class="count"></span></h3>
+        <h3 class="section-label"><span data-i18n="sources.heading">Sources</span> <span id="source-count" class="count"></span></h3>
         <div id="sources"></div>
       </section>
-      <p class="disclaimer">AI-generated synthesis. Check each claim against its quoted passage. Coverage is limited to the connected sample; missing evidence does not mean a claim is false.</p>
+      <p class="disclaimer" data-i18n="answer.disclaimer">AI-generated synthesis. Check each claim against its quoted passage. Coverage is limited to the connected sample; missing evidence does not mean a claim is false.</p>
     </div>
   </aside>
-  <button type="button" id="answer-reopen" class="reopen" hidden><svg aria-hidden="true"><use href="#i-panel"/></svg>Show answer</button>
+  <button type="button" id="answer-reopen" class="reopen" hidden><svg aria-hidden="true"><use href="#i-panel"/></svg><span data-i18n="answer.show">Show answer</span></button>
 
   <aside id="glance" aria-labelledby="glance-title" aria-hidden="true" inert>
     <header class="panel-head">
       <div><h2 id="glance-title"></h2><p id="glance-kind" class="muted"></p></div>
-      <button type="button" class="icon-button" id="glance-close" aria-label="Close summary"><svg aria-hidden="true"><use href="#i-close"/></svg></button>
+      <button type="button" class="icon-button" id="glance-close" aria-label="Close summary" data-i18n-attr="aria-label:glance.close"><svg aria-hidden="true"><use href="#i-close"/></svg></button>
     </header>
     <div class="panel-scroll">
-      <section><h3 class="section-label">In this answer</h3><div id="glance-issues"></div></section>
-      <section><h3 class="section-label">WRI at a glance</h3><div id="glance-summary" aria-live="polite"></div></section>
+      <section><h3 class="section-label" data-i18n="glance.in_answer">In this answer</h3><div id="glance-issues"></div></section>
+      <section><h3 class="section-label" data-i18n="glance.at_a_glance">WRI at a glance</h3><div id="glance-summary" aria-live="polite"></div></section>
       <div id="glance-thread" aria-live="polite"></div>
     </div>
     <form id="glance-form" autocomplete="off">
-      <label class="sr-only" for="glance-input">Ask a follow-up about this place</label>
-      <input id="glance-input" type="text" minlength="3" maxlength="500" placeholder="Ask a follow-up about this place…">
-      <button id="glance-send" type="submit" class="primary small">Ask</button>
+      <label class="sr-only" for="glance-input" data-i18n="glance.followup_label">Ask a follow-up about this place</label>
+      <input id="glance-input" type="text" minlength="3" maxlength="500" placeholder="Ask a follow-up about this place…" data-i18n-attr="placeholder:glance.followup_placeholder">
+      <button id="glance-send" type="submit" class="primary small" data-i18n="glance.ask">Ask</button>
     </form>
-    <a id="glance-brief" class="brief-link" target="_blank" rel="noopener">Full briefing <svg aria-hidden="true"><use href="#i-arrow"/></svg></a>
+    <a id="glance-brief" class="brief-link" target="_blank" rel="noopener"><span data-i18n="glance.brief">Full briefing</span> <svg aria-hidden="true"><use href="#i-arrow"/></svg></a>
   </aside>
 
-  <div class="globe-controls" role="group" aria-label="Globe controls">
-    <button type="button" id="globe-in" aria-label="Zoom in"><svg aria-hidden="true"><use href="#i-plus"/></svg></button>
-    <button type="button" id="globe-out" aria-label="Zoom out"><svg aria-hidden="true"><use href="#i-minus"/></svg></button>
-    <button type="button" id="globe-reset" aria-label="Reset view"><svg aria-hidden="true"><use href="#i-reset"/></svg></button>
-    <button type="button" id="globe-rotate" aria-label="Rotation" aria-pressed="true"><svg aria-hidden="true"><use href="#i-rotate"/></svg></button>
+  <div class="globe-controls" role="group" aria-label="Globe controls" data-i18n-attr="aria-label:controls.globe">
+    <button type="button" id="globe-in" aria-label="Zoom in" data-i18n-attr="aria-label:controls.zoom_in"><svg aria-hidden="true"><use href="#i-plus"/></svg></button>
+    <button type="button" id="globe-out" aria-label="Zoom out" data-i18n-attr="aria-label:controls.zoom_out"><svg aria-hidden="true"><use href="#i-minus"/></svg></button>
+    <button type="button" id="globe-reset" aria-label="Reset view" data-i18n-attr="aria-label:controls.reset"><svg aria-hidden="true"><use href="#i-reset"/></svg></button>
+    <button type="button" id="globe-rotate" aria-label="Rotation" data-i18n-attr="aria-label:controls.rotation" aria-pressed="true"><svg aria-hidden="true"><use href="#i-rotate"/></svg></button>
   </div>
 
   <form id="ask-form" class="askbar">
-    <div class="chips" aria-label="Example questions">
-      <button class="chip" type="button" data-question="What does WRI say about clean energy policy?">Clean energy policy</button>
-      <button class="chip" type="button" data-question="Where is urban flooding a problem?">Urban flooding</button>
-      <button class="chip" type="button" data-question="What was WRI's audited operating expenditure in fiscal year 2025?">Test the limits</button>
+    <div class="chips" aria-label="Example questions" data-i18n-attr="aria-label:examples.aria">
+      <button class="chip" type="button" data-question="What does WRI say about clean energy policy?" data-i18n-question="example.energy.q" data-i18n="example.energy.label">Clean energy policy</button>
+      <button class="chip" type="button" data-question="Where is urban flooding a problem?" data-i18n-question="example.flood.q" data-i18n="example.flood.label">Urban flooding</button>
+      <button class="chip" type="button" data-question="What was WRI's audited operating expenditure in fiscal year 2025?" data-i18n-question="example.limits.q" data-i18n="example.limits.label">Test the limits</button>
     </div>
     <div class="ask-row">
-      <select id="team" aria-label="Your team (optional)">
-        <option value="">Team</option>
-        <option>Cities</option><option>Food</option><option>Forests</option><option>Water</option>
-        <option>Climate</option><option>Energy</option><option>Communications</option>
-        <option>Brazil office</option><option>India office</option><option>Africa office</option>
-        <option>Mexico office</option><option>Indonesia office</option>
+      <label class="sr-only" for="language" data-i18n="lang.label">Language</label>
+      <select id="language" class="lang-select"></select>
+      <!-- values stay in English so Demand Radar groups teams the same in every language -->
+      <select id="team" aria-label="Your team (optional)" data-i18n-attr="aria-label:team.aria">
+        <option value="" data-i18n="team.none">Team</option>
+        <option value="Cities" data-i18n="team.cities">Cities</option><option value="Food" data-i18n="team.food">Food</option>
+        <option value="Forests" data-i18n="team.forests">Forests</option><option value="Water" data-i18n="team.water">Water</option>
+        <option value="Climate" data-i18n="team.climate">Climate</option><option value="Energy" data-i18n="team.energy">Energy</option>
+        <option value="Communications" data-i18n="team.communications">Communications</option>
+        <option value="Brazil office" data-i18n="team.brazil">Brazil office</option><option value="India office" data-i18n="team.india">India office</option>
+        <option value="Africa office" data-i18n="team.africa">Africa office</option><option value="Mexico office" data-i18n="team.mexico">Mexico office</option>
+        <option value="Indonesia office" data-i18n="team.indonesia">Indonesia office</option>
       </select>
-      <label class="sr-only" for="question">Your research question</label>
-      <textarea id="question" rows="1" required minlength="3" maxlength="2000" placeholder="What would you like to understand?"></textarea>
-      <button class="primary" id="ask-button" type="submit"><span id="ask-button-text">Find evidence</span><svg aria-hidden="true"><use href="#i-arrow"/></svg></button>
+      <label class="sr-only" for="question" data-i18n="question.label">Your research question</label>
+      <textarea id="question" rows="1" required minlength="3" maxlength="2000" placeholder="What would you like to understand?" data-i18n-attr="placeholder:question.placeholder"></textarea>
+      <button class="primary" id="ask-button" type="submit"><span id="ask-button-text" data-i18n="ask.button">Find evidence</span><svg aria-hidden="true"><use href="#i-arrow"/></svg></button>
     </div>
-    <div id="search-progress" role="status" hidden><span class="bar"></span>Searching WRI publications…</div>
+    <div id="search-progress" role="status" hidden><span class="bar"></span><span data-i18n="search.progress">Searching WRI publications…</span></div>
   </form>
 
-  <section id="connections" aria-label="Research connection map" hidden>
+  <section id="connections" aria-label="Research connection map" data-i18n-attr="aria-label:graph.aria" hidden>
     <div id="graph-host">
       <p id="graph-status" class="muted" role="status"></p>
       <div id="graph-tooltip" hidden></div>
-      <aside id="graph-info" hidden aria-label="Publication details"></aside>
-      <ul id="graph-list" class="sr-only" aria-label="Publications in the map"></ul>
+      <aside id="graph-info" hidden aria-label="Publication details" data-i18n-attr="aria-label:graph.details"></aside>
+      <ul id="graph-list" class="sr-only" aria-label="Publications in the map" data-i18n-attr="aria-label:graph.list"></ul>
     </div>
-    <div class="graph-controls" role="group" aria-label="Map controls">
-      <button type="button" id="graph-in" aria-label="Zoom in"><svg aria-hidden="true"><use href="#i-plus"/></svg></button>
-      <button type="button" id="graph-out" aria-label="Zoom out"><svg aria-hidden="true"><use href="#i-minus"/></svg></button>
-      <button type="button" id="graph-reset" aria-label="Reset view"><svg aria-hidden="true"><use href="#i-reset"/></svg></button>
+    <div class="graph-controls" role="group" aria-label="Map controls" data-i18n-attr="aria-label:graph.controls">
+      <button type="button" id="graph-in" aria-label="Zoom in" data-i18n-attr="aria-label:controls.zoom_in"><svg aria-hidden="true"><use href="#i-plus"/></svg></button>
+      <button type="button" id="graph-out" aria-label="Zoom out" data-i18n-attr="aria-label:controls.zoom_out"><svg aria-hidden="true"><use href="#i-minus"/></svg></button>
+      <button type="button" id="graph-reset" aria-label="Reset view" data-i18n-attr="aria-label:controls.reset"><svg aria-hidden="true"><use href="#i-reset"/></svg></button>
     </div>
-    <p class="graph-legend">Topics are hubs. Dashed lines link publications that share title terms; hover a line to see why. Gold rings mark sources from your latest answer. Hollow nodes are sample data.</p>
+    <p class="graph-legend" data-i18n="graph.legend">Topics are hubs. Dashed lines link publications that share title terms; hover a line to see why. Gold rings mark sources from your latest answer. Hollow nodes are sample data.</p>
   </section>
 </div>
 <div id="announcement" class="sr-only" role="status" aria-live="polite" aria-atomic="true"></div>

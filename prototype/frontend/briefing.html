@@ -7,29 +7,33 @@
 <meta name="color-scheme" content="dark">
 <meta name="referrer" content="no-referrer">
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 viewBox=%270 0 24 24%27 fill=%27none%27 stroke=%27%23e3bc5b%27 stroke-width=%271.8%27 stroke-linecap=%27round%27 stroke-linejoin=%27round%27%3E%3Cpath d=%27M19 4C8 3 3 8 5 14c2 6 12 5 14-10Z%27/%3E%3Cpath d=%27M4 21 15 10%27/%3E%3C/svg%3E">
-<title>Briefing — AskWRI</title>
+<title data-i18n="briefing.page_title">Briefing — AskWRI</title>
 </head>
 <body class="briefing-page">
-<a class="skip" href="#briefing">Skip to briefing</a>
+<a class="skip" href="#briefing" data-i18n="briefing.skip">Skip to briefing</a>
 <header class="topbar static">
   <a class="brand" href="./">AskWRI</a>
-  <a class="ghost-link" href="./">← Back to the globe</a>
+  <div class="briefing-nav">
+    <label class="sr-only" for="language" data-i18n="lang.label">Language</label>
+    <select id="language" class="lang-select"></select>
+    <a class="ghost-link" href="./" data-i18n="briefing.back">← Back to the globe</a>
+  </div>
 </header>
 <main id="briefing" tabindex="-1">
-  <p id="demo-banner" class="banner" hidden><strong>Sample data.</strong> This briefing is an invented placeholder, not WRI research.</p>
-  <p class="eyebrow" id="b-eyebrow">Research briefing</p>
-  <h1 id="b-title">Loading briefing…</h1>
+  <p id="demo-banner" class="banner" hidden><strong data-i18n="demo.label">Sample data.</strong> <span data-i18n="briefing.demo">This briefing is an invented placeholder, not WRI research.</span></p>
+  <p class="eyebrow" id="b-eyebrow" data-i18n="briefing.eyebrow">Research briefing</p>
+  <h1 id="b-title" data-i18n="briefing.loading">Loading briefing…</h1>
   <p class="muted" id="b-meta"></p>
   <div class="briefing-actions">
-    <button type="button" class="ghost" id="b-copy" hidden>Copy</button>
-    <button type="button" class="ghost" id="b-print" hidden>Print</button>
+    <button type="button" class="ghost" id="b-copy" hidden data-i18n="copy">Copy</button>
+    <button type="button" class="ghost" id="b-print" hidden data-i18n="briefing.print">Print</button>
   </div>
   <div id="b-body" aria-live="polite"></div>
   <section id="b-related" hidden>
-    <h2 class="section-label">Related publications</h2>
+    <h2 class="section-label" data-i18n="briefing.related">Related publications</h2>
     <div id="b-sources"></div>
   </section>
-  <p class="disclaimer">AI-generated synthesis from WRI publications only. Check each claim against its quoted passage. Missing evidence does not mean a claim is false.</p>
+  <p class="disclaimer" data-i18n="briefing.disclaimer">AI-generated synthesis from WRI publications only. Check each claim against its quoted passage. Missing evidence does not mean a claim is false.</p>
 </main>
 <div id="announcement" class="sr-only" role="status" aria-live="polite" aria-atomic="true"></div>
 <script type="module" src="/src/briefing.js"></script>

@@ -2,6 +2,10 @@ import './styles.css';
 import { createGlobe } from './globe.js';
 import { initApp } from './app.js';
 import { $ } from './util.js';
+import { t, setLanguage, detectLanguage, bindPicker } from './i18n.js';
+
+setLanguage(detectLanguage(), { save: false });
+bindPicker($('language'), { short: window.matchMedia('(max-width: 760px)').matches });
 
 let globe = null;
 const message = $('globe-message');
@@ -13,7 +17,7 @@ try {
 } catch {
   // Search, pins-as-list and briefings all still work without WebGL.
   message.hidden = false;
-  message.textContent = 'The interactive Earth needs WebGL 2. Enable browser graphics acceleration or try another browser. Search and answers still work.';
+  message.textContent = t('globe.no_webgl');
   document.querySelectorAll('.globe-controls button').forEach(b => { b.disabled = true; });
 }
 initApp({ globe });

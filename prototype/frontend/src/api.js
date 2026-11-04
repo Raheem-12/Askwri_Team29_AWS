@@ -1,12 +1,14 @@
 // Thin client for the FastAPI backend. Errors become readable Error messages;
 // raw server details never reach the page beyond the backend's own `detail`.
+import { t } from './i18n.js';
+
+// Only send a language when it isn't English, so requests look exactly as before by default.
+const withLanguage = (body, language) => (language && language !== 'en' ? { ...body, language } : body);
 export async function jsonResponse(response) {
   try {
     return await response.json();
   } catch {
-    throw new Error(response.ok
-      ? 'The server returned an unreadable response. Please try again.'
-      : 'The research service could not complete the request (HTTP ' + response.status + '). Please try again.');
+    throw new Error(response.ok ? t('api.unreadable') : t('api.failed_http', { status: response.status }));
   }
 }
 
@@ -23,11 +25,11 @@ async function request(path, { method = 'GET', body, timeout = 180000 } = {}) {
     const data = await jsonResponse(response);
     if (!response.ok) {
       throw new Error(typeof data.detail === 'string' ? data.detail
-        : 'The research request failed (HTTP ' + response.status + '). Please try again.');
+        : t('api.request_failed', { status: response.status }));
     }
     return data;
   } catch (error) {
-    if (error.name === 'AbortError') throw new Error('The request took too long. Please try again.');
+    if (error.name === 'AbortError') throw new Error(t('api.timeout'));
     throw error;
   } finally {
     clearTimeout(timer);
@@ -38,18 +40,18 @@ export const ANSWER_STATUSES = ['answered', 'insufficient_evidence', 'out_of_sco
 
 export function checkAnswer(data) {
   if (!data || !ANSWER_STATUSES.includes(data.status)) {
-    throw new Error('The server returned an unexpected answer format. Please try again.');
+    throw new Error(t('api.bad_format'));
   }
   return data;
 }
 
 export const api = {
   status: () => request('/api/status', { timeout: 10000 }),
-  ask: (question, team) => request('/api/ask', {
-    method: 'POST', body: team ? { question, team } : { question } }).then(checkAnswer),
-  glance: (place, question) => request('/api/glance', {
-    method: 'POST', body: question ? { place, question } : { place } }).then(checkAnswer),
-  briefing: (place, topic) => request('/api/briefing', {
-    method: 'POST', body: topic ? { place, topic } : { place } }),
+  ask: (question, team, language) => request('/api/ask', {
+    method: 'POST', body: withLanguage(team ? { question, team } : { question }, language) }).then(checkAnswer),
+  glance: (place, question, language) => request('/api/glance', {
+    method: 'POST', body: withLanguage(question ? { place, question } : { place }, language) }).then(checkAnswer),
+  briefing: (place, topic, language) => request('/api/briefing', {
+    method: 'POST', body: withLanguage(topic ? { place, topic } : { place }, language) }),
   graph: () => request('/api/graph', { timeout: 20000 })
 };

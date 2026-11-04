@@ -1,4 +1,5 @@
 import { el } from './util.js';
+import { t, tn } from './i18n.js';
 
 const CLUSTER_PX = 30;   // pins closer than this merge into one count marker
 const MIN_FACING = 0.02; // pins on the far side of the globe are hidden
@@ -11,9 +12,9 @@ export function createPins(layer, { onSelect, onCluster }) {
   let selectedId = null;
 
   const describe = (place, n = 1) => n > 1
-    ? `${n} places close together. Zoom in.`
-    : `${place.name}${place.precision === 'approximate' ? ' (approximate area)' : ''}, ${place.issues.length} `
-      + `${place.issues.length === 1 ? 'issue' : 'issues'} in these sources. Open summary.`;
+    ? t('pins.cluster', { n })
+    : tn('pins.describe', place.issues.length,
+      { name: place.name, approx: place.precision === 'approximate' ? t('pins.approx_area') : '' });
 
   function setPlaces(places) {
     layer.replaceChildren();
@@ -30,7 +31,7 @@ export function createPins(layer, { onSelect, onCluster }) {
       core.append(el('span', '', 'pin-pulse'), el('span', '', 'pin-dot'));
       const count = el('span', '', 'pin-count');
       count.hidden = true;
-      button.append(core, count, el('span', place.name + (place.precision === 'approximate' ? ' · approx.' : ''), 'pin-label'));
+      button.append(core, count, el('span', place.name + (place.precision === 'approximate' ? t('pins.approx') : ''), 'pin-label'));
       const entry = { place, button, count, members: [place.id], last: '' };
       button.addEventListener('click', () => (entry.members.length > 1 ? onCluster(entry.members) : onSelect(place.id)));
       entries.set(place.id, entry);
