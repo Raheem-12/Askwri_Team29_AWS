@@ -1,5 +1,20 @@
-data/raw/
+# Secrets and local config (shared out-of-band, never committed)
 .env
+.env.*
+!.env.example
+.aws/
+
+# Local data (downloaded corpus, shared by teammates)
+data/raw/
+
+# Python
 .venv/
 __pycache__/
+*.pyc
+
+# Node
+node_modules/
+dist/
+
+# OS
 .DS_Store
