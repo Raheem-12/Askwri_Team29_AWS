@@ -24,7 +24,9 @@
     "examples": [
      "What medication should I take for my cough?",
      "Should I buy shares in a solar company?",
-     "Can I sue my landlord over this?"
+     "Can I sue my landlord over this?",
+     "Which clean-energy stocks or funds are the best investment right now?",
+     "How should I invest my savings given climate risk?"
     ],
     "type": "DENY"
    },
@@ -89,7 +91,7 @@
    },
    {
     "type": "MISCONDUCT",
-    "inputStrength": "MEDIUM",
+    "inputStrength": "HIGH",
     "outputStrength": "MEDIUM"
    },
    {
