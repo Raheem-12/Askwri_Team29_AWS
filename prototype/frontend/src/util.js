@@ -27,6 +27,11 @@ export function safeURL(value) {
   }
 }
 
+// Our own route to a citation's original PDF. Saved sessions can be edited, so the shape is checked.
+export function documentURL(value) {
+  return typeof value === 'string' && /^\/api\/document\/docs\/\d{4}_publications\/[^/?#\\]+\.pdf$/.test(value) ? value : null;
+}
+
 export function pageNumber(value) {
   if (value === null || value === undefined || value === '') return null;
   const n = Number(value);

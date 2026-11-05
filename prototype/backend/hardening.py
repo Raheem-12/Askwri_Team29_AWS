@@ -16,6 +16,7 @@ from starlette.middleware.trustedhost import TrustedHostMiddleware
 
 MAX_BODY_BYTES = 64 * 1024  # six turns of history at their field limits, with room for JSON escapes
 COSTLY_ROUTES = ('/api/ask', '/api/glance', '/api/briefing')  # each one spends Bedrock tokens
+DOCUMENT_PREFIX = '/api/document/'
 WINDOW_SECONDS = 60
 BASE_POLICY = ("default-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; "
                "connect-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'")
@@ -90,6 +91,12 @@ def install(app, radar_file):
                 if wait:
                     response = JSONResponse({'detail': f'Too many requests. Please wait {wait} seconds and try again.'},
                                             status_code=429, headers={'Retry-After': str(wait)})
+        if response is None and path.startswith(DOCUMENT_PREFIX):  # free to ask for, but each one streams a PDF
+            client = request.client.host if request.client else 'unknown'
+            wait = limiter.retry_after(client, rate_limit())
+            if wait:
+                response = JSONResponse({'detail': f'Too many requests. Please wait {wait} seconds and try again.'},
+                                        status_code=429, headers={'Retry-After': str(wait)})
         if response is None:
             response = await call_next(request)
         for name, value in HEADERS.items():

@@ -13,14 +13,14 @@ import re
 import sqlite3
 import sys
 from pathlib import Path
-from urllib.parse import urlsplit
+from urllib.parse import quote, unquote, urlsplit
 
 import boto3
 from botocore.config import Config
 from botocore.exceptions import BotoCoreError, ClientError
 from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException, Query
-from fastapi.responses import FileResponse, JSONResponse, PlainTextResponse
+from fastapi.responses import FileResponse, JSONResponse, PlainTextResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from typing import Literal
 
@@ -205,6 +205,31 @@ def public_wri_url(value):
     return None
 
 
+# The only files /api/document serves: publications, never metadata or anything else in the bucket.
+DOCUMENT_KEY = re.compile(r'docs/\d{4}_publications/[^/\x00-\x1f]+\.pdf')
+
+
+def document_link(result):
+    """Our link to the PDF a passage came from, or None. It comes from the Knowledge Base's own
+    record of the file, never from a guess, and it leaves the bucket's name out of the browser."""
+    bucket = env('CORPUS_BUCKET')
+    uri = ((result.get('location') or {}).get('s3Location') or {}).get('uri')
+    if not bucket or not isinstance(uri, str):
+        return None
+    parts = urlsplit(uri)
+    if parts.scheme == 's3':
+        known = parts.netloc == bucket
+    else:
+        known = parts.scheme == 'https' and (parts.hostname or '').split('.s3.')[0] == bucket
+    key = unquote(parts.path).lstrip('/')
+    return '/api/document/' + quote(key) if known and DOCUMENT_KEY.fullmatch(key) else None
+
+
+def model_passages(sources):
+    """What the model reads about each source. It has no use for our file links."""
+    return [{k: v for k, v in s.items() if k != 'document'} for s in sources]
+
+
 def evidence_sources(results):
     sources = []
     for result in results:
@@ -224,7 +249,8 @@ def evidence_sources(results):
                 page = int(raw_page)
         except (TypeError, ValueError, OverflowError):
             pass
-        sources.append(dict(id=f'S{len(sources)+1}', title=title, url=url, page=page, passage=passage))
+        sources.append(dict(id=f'S{len(sources)+1}', title=title, url=url, page=page, passage=passage,
+                            document=document_link(result)))
     return sources
 
 
@@ -369,6 +395,11 @@ def aws_clients(region):
             session.client('bedrock-runtime', config=config))
 
 
+def document_client():
+    config = Config(connect_timeout=5, read_timeout=60, retries={'max_attempts': 2, 'mode': 'standard'})
+    return boto3.Session(region_name=settings()['AWS_REGION'] or 'us-east-1').client('s3', config=config)
+
+
 def clients():
     """(retriever, generator, guard_client, kb_id, model_id)"""
     cfg = settings()
@@ -508,6 +539,37 @@ def follow_up_query(conversation, question):
     return ' '.join(dict.fromkeys(parts))[:MAX_SEARCH_CHARS]
 
 
+NO_EVIDENCE_REASONS = {'no_sources', 'model_unanswerable', 'model_declined'}
+
+
+def safety_summary(screening, quotes='not_run', dropped=0, grounding='not_run', reason=None):
+    """What each safety check found, for the card beside the answer.
+
+    Fixed labels and a count only: never assessments, filter names, scores or user text, which can
+    echo the PII that triggered them. A block looks the same whichever filter fired, so the card
+    can't be used to probe the filters. A check that did not run is never reported as passed.
+    """
+    checks = [{'id': 'input', 'result': screening},
+              {'id': 'quotes', 'result': quotes, **({'count': dropped} if quotes == 'removed' else {})},
+              {'id': 'grounding', 'result': grounding}]
+    if screening == 'blocked':
+        verdict = 'blocked'
+    elif 'failed' in (quotes, grounding):
+        verdict = 'review'
+    elif reason in NO_EVIDENCE_REASONS:  # a lack of evidence is not a safety flaw
+        verdict = 'declined'
+    else:
+        verdict = 'clear' if (screening, quotes, grounding) == ('passed', 'passed', 'passed') else 'review'
+    return {'verdict': verdict, 'checks': checks}
+
+
+def quote_check_result(result):
+    """The quote check's outcome, read from `validate_answer`'s result."""
+    if result['status'] == 'answered':
+        return 'removed' if result.get('dropped_claims') else 'passed'
+    return 'failed' if result.get('refusal_reason') == 'quote_mismatch' else 'not_run'
+
+
 def answer_question(question, retriever, generator, kb_id, model_id, guard=None,
                     mode='ask', system=SYSTEM_ASK, extra=None, count=12, search_query=None, language='en',
                     history=None):
@@ -516,32 +578,44 @@ def answer_question(question, retriever, generator, kb_id, model_id, guard=None,
     `history` holds earlier turns of a session: untrusted, so it is checked like the question.
     It helps find passages and explains the question, but quotes must come from this retrieval."""
     extra = dict(extra or {})
+    guard_on = bool(guard) and guardrails.configured()  # without both, check_* return without checking
+    screening = 'passed' if guard_on else 'limited'
     try:
         screen(question)
         for turn in history or []:
             screen(turn.question)
+        typed = question
         question = guardrails.check_input(guard, question) if guard else question
+        if question != typed:
+            screening = 'masked'
         if history:
             extra['conversation'] = checked_history(guard, history)
             search_query = follow_up_query(extra['conversation'], question)
             system += FOLLOW_UP
     except guardrails.Blocked as blocked:
         return {'status': 'out_of_scope', 'answer': str(blocked), 'claims': [], 'sources': [],
-                'locations': [], 'topic': None, 'demo': demo_mode(), **language_fields(language)}
+                'locations': [], 'topic': None, 'demo': demo_mode(), 'safety': safety_summary('blocked'),
+                **language_fields(language)}
     sources, top_score = retrieve_sources(retriever, kb_id, search_query or question, count)
     done = {'topic': question, 'demo': demo_mode(), '_top_score': top_score, **language_fields(language)}
     if not sources:
-        return {**refusal('no_sources'), **done}
+        return {**refusal('no_sources'), **done, 'safety': safety_summary(screening, reason='no_sources')}
     result = generate_checked(generator, model_id, mode, with_language(system, language),
-                              {'question': question, 'passages': sources, **extra}, ANSWER_TOKENS,
+                              {'question': question, 'passages': model_passages(sources), **extra}, ANSWER_TOKENS,
                               lambda payload: validate_answer(payload, sources))
-    if guard and result['status'] == 'answered' and \
-            not guardrails.check_output(guard, result['answer'], question, [s['passage'] for s in result['sources']]):
-        result = refusal('grounding')
+    quotes = quote_check_result(result)  # read now: a grounding refusal below replaces the result
+    dropped = result.get('dropped_claims', 0)
+    grounding = 'not_run'
+    if guard_on and result['status'] == 'answered':
+        grounding = 'passed'
+        if not guardrails.check_output(guard, result['answer'], question, [s['passage'] for s in result['sources']]):
+            grounding = 'failed'
+            result = refusal('grounding')
     if result['status'] == 'insufficient_evidence':
         logger.info('refusal: mode=%s reason=%s top_score=%s sources=%s', mode, result.get('refusal_reason'),
                     top_score, len(sources))
-    return {**result, **done}
+    return {**result, **done, 'safety': safety_summary(screening, quotes, dropped, grounding,
+                                                       result.get('refusal_reason'))}
 
 
 def log_to_radar(result, team=None, endpoint='ask', question=None):
@@ -577,7 +651,7 @@ def build_briefing(place, topic, retriever, generator, kb_id, model_id, guard=No
     if not sources:
         return {**done, 'status': 'insufficient_evidence', 'message': REFUSAL, 'sections': [], 'sources': []}
     briefing = generate_checked(generator, model_id, 'briefing', with_language(SYSTEM_BRIEFING, language),
-                                {'place': place, 'topic': topic or 'main research issues', 'passages': sources},
+                                {'place': place, 'topic': topic or 'main research issues', 'passages': model_passages(sources)},
                                 3000, lambda payload: validate_briefing(payload, sources))
     if briefing is None:
         return {**done, 'status': 'insufficient_evidence', 'message': REFUSAL, 'sections': [], 'sources': []}
@@ -684,6 +758,35 @@ def radar_api(days: int = Query(7, ge=1, le=90), gap: str | None = None,
 def radar_export(days: int = Query(7, ge=1, le=90), gap: str | None = None,
                  team: str | None = None, language: str | None = None):
     return radar.export_markdown(radar_report(days, gap, team, language))
+
+
+@app.get('/api/document/{key:path}')
+def document(key: str):
+    """The original PDF behind a citation. The bucket stays private: only publication PDFs can be
+    read through here, and they're always sent as PDFs, whatever the stored file claims to be."""
+    bucket = env('CORPUS_BUCKET')
+    if demo_mode() or not bucket or not DOCUMENT_KEY.fullmatch(key):
+        raise HTTPException(404, 'That document is not available.')
+    try:
+        stored = document_client().get_object(Bucket=bucket, Key=key)
+    except ClientError as error:
+        if error.response.get('Error', {}).get('Code') in ('NoSuchKey', 'AccessDenied', '403', '404'):
+            raise HTTPException(404, 'That document is not available.')
+        raise HTTPException(503, 'The document could not be fetched. Please retry.')
+    except BotoCoreError:
+        raise HTTPException(503, 'The document could not be fetched. Please retry.')
+    filename = re.sub(r'[^A-Za-z0-9._-]+', '-', key.rsplit('/', 1)[-1])
+    headers = {'Content-Disposition': f'inline; filename="{filename}"'}
+    if isinstance(stored.get('ContentLength'), int):
+        headers['Content-Length'] = str(stored['ContentLength'])
+
+    def chunks():
+        try:
+            yield from stored['Body'].iter_chunks(1024 * 1024)
+        finally:
+            stored['Body'].close()
+
+    return StreamingResponse(chunks(), media_type='application/pdf', headers=headers)
 
 
 @app.get('/favicon.ico', status_code=204)

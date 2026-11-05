@@ -148,7 +148,9 @@ body[data-has-answer] .askbar .chips { display: none; }
 .source > summary::-webkit-details-marker { display: none; }
 .source-number { flex: none; display: grid; place-items: center; width: 22px; height: 22px; border-radius: 50%; background: rgba(227, 188, 91, 0.2); color: var(--gold); font-size: 12px; font-weight: 700; }
 .source-title { font-size: 14px; line-height: 1.4; }
-.source-meta { display: flex; flex-wrap: wrap; gap: 4px 14px; padding: 0 12px 6px 44px; font-size: 12.5px; color: var(--muted); }
+.source-heading { flex: 1; min-width: 0; }
+.source-title { display: block; }
+.source-meta { display: flex; flex-wrap: wrap; gap: 4px 14px; margin-top: 5px; font-size: 12.5px; color: var(--muted); }
 .quote { margin: 4px 12px 8px 44px; padding-left: 12px; border-left: 2px solid var(--gold); color: var(--ink-soft); font-size: 13.5px; }
 details.passage { margin: 0 12px 12px 44px; font-size: 13px; color: var(--muted); }
 details.passage summary { cursor: pointer; color: var(--gold); }
@@ -205,7 +207,7 @@ details.passage p { margin-top: 6px; }
 .graph-legend { position: absolute; left: 16px; bottom: 110px; max-width: 360px; font-size: 12px; color: var(--muted); }
 body[data-view="graph"] #globe-viewport, body[data-view="graph"] #pin-layer, body[data-view="graph"] #leader,
 body[data-view="graph"] #glance, body[data-view="graph"] #answer-panel, body[data-view="graph"] .globe-controls,
-body[data-view="graph"] .reopen { display: none; }
+body[data-view="graph"] .reopen, body[data-view="graph"] #safety-card { display: none; }
 body[data-view="graph"] .askbar { left: 16px; right: 16px; }
 body[data-view="graph"] #guardrail-note { display: none; }
 
@@ -253,6 +255,28 @@ body[data-view="graph"] #guardrail-note { display: none; }
 .past-sample { margin-left: 8px; color: var(--gold); font-weight: 600; letter-spacing: 0.04em; }
 #clear-sessions[hidden] { display: none; }
 
+/* ---------- safety check: beside the answer, in the glance card's column ---------- */
+#safety-card { position: absolute; z-index: 19; top: calc(var(--topbar) + 8px); right: 16px; width: min(280px, calc(100% - 32px)); max-height: calc(100% - var(--topbar) - 228px); overflow: auto; padding: 12px 14px; background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); backdrop-filter: blur(16px); box-shadow: 0 18px 60px rgba(0, 0, 0, 0.4); }
+/* It belongs to the answer, and the glance card needs the column while open. */
+body:has(#glance.is-open) #safety-card, body:has(#answer-panel:not(.is-open)) #safety-card { display: none; }
+#safety-inline { display: none; }
+.safety-head { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 2px 10px; }
+.safety-head .section-label { margin: 0; }
+.safety-verdict { font-size: 13px; font-weight: 600; }
+.safety-verdict[data-tone="ok"] { color: var(--ok); }
+.safety-verdict[data-tone="warn"] { color: var(--gold); }
+.safety-verdict[data-tone="danger"] { color: var(--danger); }
+.safety-verdict[data-tone="muted"] { color: var(--muted); }
+.safety-checks { list-style: none; margin: 8px 0 0; padding: 0; display: grid; gap: 7px; }
+.safety-checks li { position: relative; display: grid; padding-left: 14px; font-size: 12.5px; line-height: 1.35; }
+.safety-checks li::before { content: ""; position: absolute; left: 0; top: 5px; width: 7px; height: 7px; border-radius: 50%; background: var(--muted); }
+.safety-checks li[data-tone="ok"]::before { background: var(--ok); }
+.safety-checks li[data-tone="warn"]::before { background: var(--gold); }
+.safety-checks li[data-tone="danger"]::before { background: var(--danger); }
+.safety-name { color: var(--ink); }
+.safety-result { color: var(--muted); }
+.safety-note { margin: 9px 0 0; font-size: 11px; line-height: 1.35; color: var(--muted); }
+
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation-duration: 0.001ms !important; animation-iteration-count: 1 !important; transition-duration: 0.001ms !important; transition-delay: 0s !important; }
   .pin-pulse { display: none; }
@@ -276,13 +300,15 @@ body[data-view="graph"] #guardrail-note { display: none; }
   #answer-panel { height: 56dvh; } /* a fixed height lets the two panes scroll inside the sheet */
   body:has(#glance.is-open) #answer-panel { visibility: hidden; opacity: 0; transform: translateY(40px); transition-delay: 0s; }
   body:has(#answer-panel.is-open) .askbar, body:has(#glance.is-open) .askbar { transform: translateY(160%); opacity: 0; pointer-events: none; }
+  #safety-card { display: none; }
+  #safety-inline { display: block; margin-top: 14px; padding: 12px 14px; border: 1px solid var(--line); border-radius: 12px; }
   .reopen { left: 12px; bottom: 76px; }
   .graph-legend { bottom: 86px; right: 60px; }
   .graph-controls { bottom: 90px; }
 }
 @media print {
   body { background: #fff; color: #000; overflow: visible; }
-  .topbar, .briefing-actions, .skip { display: none; }
+  .topbar, .briefing-actions, .skip, #safety-card { display: none; }
   .claim, .quote, .source-meta { color: #000; }
   a { color: #000; }
 }

@@ -1,7 +1,7 @@
 // Shared renderers for cited claims and source evidence. All text goes through
 // textContent; links go through safeURL. `prefix` keeps element ids unique when
 // several answers (answer panel, glance card, follow-ups) are on the page at once.
-import { el, safeURL, pageNumber, externalLink } from './util.js';
+import { el, safeURL, documentURL, pageNumber, externalLink } from './util.js';
 import { t } from './i18n.js';
 
 const titleOf = s => (typeof s.title === 'string' && s.title.trim() ? s.title : t('source.untitled'));
@@ -61,15 +61,20 @@ export function renderSource(s, claims) {
   const section = el('details', '', 'source');
   section.id = s.anchor;
   section.tabIndex = -1;
-  const url = safeURL(s.url);
+  const url = safeURL(s.url), original = documentURL(s.document);
   const summary = el('summary');
-  summary.append(el('span', String(s.number), 'source-number'), el('span', titleOf(s), 'source-title'));
+  const heading = el('div', '', 'source-heading');
+  // The links sit in the heading so they show on a closed source. Clicking one doesn't toggle it.
+  const meta = el('div', '', 'source-meta');
+  heading.append(el('span', titleOf(s), 'source-title'), meta);
+  summary.append(el('span', String(s.number), 'source-number'), heading);
   section.append(summary);
 
-  const meta = el('div', '', 'source-meta');
   const page = pageNumber(s.page);
   if (page) {
-    if (url && /\.pdf$/i.test(url.pathname)) {
+    if (original) {
+      meta.append(externalLink(t('source.pdf_page_link', { n: page }), `${original}#page=${page}`));
+    } else if (url && /\.pdf$/i.test(url.pathname)) {
       const pageURL = new URL(url.href);
       pageURL.hash = 'page=' + page;
       meta.append(externalLink(t('source.pdf_page_link', { n: page }), pageURL.href));
@@ -79,9 +84,9 @@ export function renderSource(s, claims) {
   } else {
     meta.append(el('span', t('source.no_page')));
   }
+  if (original) meta.append(externalLink(t('source.open_pdf'), original));
   if (url) meta.append(externalLink(t('source.open'), url.href));
-  else meta.append(el('span', t('source.no_link')));
-  section.append(meta);
+  if (!original && !url) meta.append(el('span', t('source.no_link')));
 
   // quote -> its machine translation, if the answer is in another language
   const quotes = new Map();

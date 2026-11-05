@@ -525,3 +525,139 @@ test('sample-mode sessions stay labeled as sample data', async () => {
   assert.match(t.$('past-list').textContent, /SAMPLE/);
   t.close();
 });
+
+// ---------- safety card
+const { cleanSafety } = await import('../src/safety.js');
+const summary = (verdict = 'clear', input = 'passed', quotes = { result: 'passed' }, grounding = 'passed') => ({ verdict,
+  checks: [{ id: 'input', result: input }, { id: 'quotes', ...quotes }, { id: 'grounding', result: grounding }] });
+const safetyApi = safety => ({ ask: async () => answer({ safety }) });
+
+test('the safety card shows each check and its result', async () => {
+  const t = boot({ api: safetyApi(summary('review', 'masked', { result: 'removed', count: 2 })) }); await settle();
+  await t.ask('A question');
+  const card = t.$('safety-card');
+  assert.equal(card.hidden, false);
+  assert.match(card.textContent, /Worth reviewing/);
+  assert.match(card.textContent, /Personal details masked/);
+  assert.match(card.textContent, /2 claims removed/);
+  assert.match(card.textContent, /not a security audit/);
+  assert.equal(t.$('safety-inline').hidden, false, 'phones show the same summary in the answer sheet');
+  t.close();
+});
+
+test('the safety card is announced only when there is something to notice', async () => {
+  let t = boot({ api: safetyApi(summary('review', 'masked')) }); await settle();
+  await t.ask('A question');
+  assert.match(t.$('announcement').textContent, /Safety check: Worth reviewing/);
+  t.close();
+  t = boot({ api: safetyApi(summary()) }); await settle();
+  await t.ask('A question');
+  assert.doesNotMatch(t.$('announcement').textContent, /Safety check/);
+  t.close();
+});
+
+test('the safety card clears while searching, and stays clear if the request fails', async () => {
+  let fail = false;
+  const t = boot({ api: { ask: async () => { if (fail) throw new Error('down'); return answer({ safety: summary() }); } } }); await settle();
+  await t.ask('First');
+  assert.equal(t.$('safety-card').hidden, false);
+  fail = true;
+  await t.ask('Second');
+  assert.equal(t.$('safety-card').hidden, true);
+  assert.equal(t.$('safety-card').textContent, '');
+  t.close();
+});
+
+test('an answer with no summary shows no card, rather than a guess', async () => {
+  const t = boot(); await settle();
+  await t.ask('A question');
+  assert.equal(t.$('safety-card').hidden, true);
+  t.close();
+});
+
+test('a past session reopens with its own summary, and older ones with none', async () => {
+  const withCard = pastSession({ turns: [{ question: 'Q', data: answer({ safety: summary('review', 'limited', { result: 'passed' }, 'not_run') }) }] });
+  let t = boot({ seed: [withCard] }); await settle();
+  t.app.openPast('old');
+  assert.match(t.$('safety-card').textContent, /Basic check only/);
+  assert.match(t.$('safety-card').textContent, /Not run/);
+  t.close();
+  t = boot({ seed: [pastSession()] }); await settle();
+  t.app.openPast('old');
+  assert.equal(t.$('safety-card').hidden, true);
+  t.close();
+});
+
+test('tampered summaries are rejected', () => {
+  const bad = [null, 'clear', {}, { verdict: 'clear' }, { verdict: 'nope', checks: summary().checks },
+    summary('clear', 'masked'), summary('clear', 'passed', { result: 'not_run' }), summary('clear', 'passed', { result: 'passed' }, 'failed'),
+    summary('blocked', 'passed'), summary('review', 'blocked'), summary('review', '<img src=x>'),
+    summary('review', 'passed', { result: 'removed' }), summary('review', 'passed', { result: 'removed', count: 0 }),
+    summary('review', 'passed', { result: 'removed', count: '2' }),
+    { verdict: 'clear', checks: [...summary().checks].reverse() }, { verdict: 'clear', checks: summary().checks.slice(1) }];
+  for (const value of bad) assert.equal(cleanSafety(value), null, JSON.stringify(value));
+  assert.deepEqual(cleanSafety(summary()), summary());
+});
+
+test('a stored summary keeps only known fields, and bad ones show no card', async () => {
+  const extra = summary();
+  extra.note = '<b>flagged text</b>';
+  extra.checks[0].detail = 'a@b.com';
+  assert.equal(JSON.stringify(cleanSafety(extra)).includes('a@b.com'), false);
+  assert.equal(JSON.stringify(cleanSafety(extra)).includes('flagged'), false);
+  const t = boot({ seed: [pastSession({ turns: [{ question: 'Q', data: answer({ safety: summary('clear', 'blocked') }) }] })] }); await settle();
+  t.app.openPast('old');
+  assert.equal(t.$('safety-card').hidden, true);
+  t.close();
+});
+
+// ---------- masked question and original PDFs
+const withDocument = (document, over = {}) => answer({ sources: [{ id: 'S1', title: 'T', url: null, page: 7, passage: 'TEST FIXTURE supporting passage.', document, ...over }] });
+
+test('the panel shows the masked question, never the typed one', async () => {
+  const t = boot({ api: { ask: async () => answer({ topic: 'Is {EMAIL} affected?' }) } }); await settle();
+  await t.ask('Is a@b.com affected?');
+  assert.match(t.$('answer-body').textContent, /Is \{EMAIL\} affected\?/);
+  assert.doesNotMatch(t.d.body.textContent, /a@b\.com/);
+  assert.doesNotMatch(t.w.localStorage.getItem('askwri.sessions.v1'), /a@b\.com/);
+  t.close();
+});
+
+test('a blocked question is not repeated on screen', async () => {
+  const t = boot({ api: { ask: async () => ({ status: 'out_of_scope', answer: 'Try again.', claims: [], sources: [], locations: [], topic: null }) } }); await settle();
+  await t.ask('my card is 4111 1111 1111 1111');
+  assert.doesNotMatch(t.$('answer-body').textContent, /4111/);
+  t.close();
+});
+
+test('a source links to its original PDF, opened at the cited page', async () => {
+  const doc = '/api/document/docs/2024_publications/a%20b.pdf';
+  const t = boot({ api: { ask: async () => withDocument(doc) } }); await settle();
+  await t.ask('A question');
+  const links = [...t.$('sources').querySelectorAll('.source-meta a')].map(a => [a.textContent, a.getAttribute('href'), a.rel, a.target]);
+  assert.deepEqual(links[0], ['PDF page 7 ↗', `${doc}#page=7`, 'noopener noreferrer', '_blank']);
+  assert.deepEqual(links[1], ['Open original PDF ↗', doc, 'noopener noreferrer', '_blank']);
+  assert.doesNotMatch(t.$('sources').textContent, /Public link unavailable/);
+  assert.ok(t.$('sources').querySelector('summary .source-meta a'), 'the links show on a closed source');
+  t.close();
+});
+
+test('a source with both keeps its wri.org link beside the PDF', async () => {
+  const t = boot({ api: { ask: async () => withDocument('/api/document/docs/2024_publications/a.pdf', { url: 'https://www.wri.org/research/a' }) } }); await settle();
+  await t.ask('A question');
+  const hrefs = [...t.$('sources').querySelectorAll('.source-meta a')].map(a => a.getAttribute('href'));
+  assert.ok(hrefs.includes('https://www.wri.org/research/a') && hrefs.includes('/api/document/docs/2024_publications/a.pdf'));
+  t.close();
+});
+
+test('unexpected document links are never rendered, including from a saved session', async () => {
+  for (const bad of ['https://evil.example/a.pdf', '//evil.example/docs/2024_publications/a.pdf', 'javascript:alert(1)',
+    '/api/document/../secret.pdf', '/api/document/docs/2024_publications/../../a.pdf', '/api/document/Resources.pdf',
+    '/api/document/docs/2024_publications/a.pdf?x=1', '/api/ask', 7, null]) {
+    const t = boot({ seed: [pastSession({ turns: [{ question: 'Q', data: withDocument(bad) }] })] }); await settle();
+    t.app.openPast('old');
+    assert.equal(t.$('sources').querySelectorAll('.source-meta a').length, 0, String(bad));
+    assert.match(t.$('sources').textContent, /Public link unavailable/);
+    t.close();
+  }
+});

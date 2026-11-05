@@ -95,10 +95,19 @@ try {
   check('at least one pin is on the visible side of the globe', pins.length >= 1, JSON.stringify(pins.map(p => p.id)));
   check('every visible pin is clickable (nothing covers it)', pins.length > 0 && pins.every(p => p.topmost));
 
+  // ---- safety card (demo mode has no guardrail, so it must admit that rather than claim a pass)
+  check('safety card appears after an answer', await evalJS(`!document.getElementById('safety-card').hidden && document.getElementById('safety-card').offsetWidth > 0`));
+  check('safety card says the check was limited, not passed', await evalJS(`/Basic check only/.test(document.getElementById('safety-card').textContent) && /Not run/.test(document.getElementById('safety-card').textContent)`));
+  const safetyBox = await evalJS(`(() => { const r = document.getElementById('safety-card').getBoundingClientRect(); return { l: r.left, r: r.right, t: r.top, b: r.bottom, w: innerWidth }; })()`);
+  check('safety card sits on the right of the screen', safetyBox.l > safetyBox.w / 2 && safetyBox.r <= safetyBox.w, JSON.stringify(safetyBox));
+  const underCard = pins.filter(p => p.x > safetyBox.l && p.x < safetyBox.r && p.y > safetyBox.t && p.y < safetyBox.b);
+  check('safety card does not cover any pin', underCard.length === 0, underCard.map(p => p.id).join());
+
   // ---- glance card
   await mouse(pins[0].x, pins[0].y);
   check('clicking a pin opens the glance card', await waitFor(`document.getElementById('glance').classList.contains('is-open')`));
   check('glance shows a cited summary', await waitFor(`!!document.querySelector('#glance-summary a.cite')`));
+  check('safety card steps aside for the glance card', await evalJS(`document.getElementById('safety-card').offsetWidth === 0`));
   await sleep(1800); await shot('3-glance');
   const title1 = await evalJS(`document.getElementById('glance-title').textContent`);
   pins = await visiblePins();
@@ -138,6 +147,7 @@ try {
   await navigate(BASE);
   await waitFor(`!!document.getElementById('view-graph')`);
   await mouse(...Object.values(await center('#view-graph')));
+  check('safety card is not shown on the connections view', await evalJS(`document.getElementById('safety-card').offsetWidth === 0`));
   check('connections view shows the map canvas', await waitFor(`!!document.querySelector('#graph-host canvas') && !document.getElementById('connections').hidden`));
   await sleep(2500); await shot('7-connections');
   const drawn = await evalJS(`(() => { const c = document.querySelector('#graph-host canvas'); const d = c.getContext('2d').getImageData(0, 0, c.width, c.height).data; let n = 0; for (let i = 3; i < d.length; i += 4 * 97) if (d[i]) n++; return n; })()`);
@@ -183,6 +193,7 @@ try {
   await navigate(BASE); await sleep(1500); await shot('8-mobile-landing');
   await evalJS(`(() => { const q = document.getElementById('question'); q.value = 'forest restoration in Brazil and Kenya'; q.dispatchEvent(new Event('input')); document.getElementById('ask-form').requestSubmit(); })()`);
   await waitFor(`document.querySelectorAll('.pin').length >= 2`); await sleep(2800); await shot('9-mobile-answer');
+  check('phone: the safety summary is in the answer sheet, not beside it', await evalJS(`document.getElementById('safety-card').offsetWidth === 0 && document.getElementById('safety-inline').offsetHeight > 0`));
   check('no horizontal overflow on a phone', await evalJS(`document.documentElement.scrollWidth <= window.innerWidth`));
   const sheet = await evalJS(`(() => { const s = document.getElementById('answer-scroll'), f = document.getElementById('followup-form').getBoundingClientRect(); return { scrolls: s.scrollHeight >= s.clientHeight && s.clientHeight > 60, formVisible: f.bottom <= window.innerHeight + 1 && f.height > 30 }; })()`);
   check('phone: the answer scrolls and the follow-up box stays on screen', sheet.scrolls && sheet.formVisible, JSON.stringify(sheet));

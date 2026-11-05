@@ -7,6 +7,7 @@ import { createGraph } from './graph.js';
 import { t, tn, getLanguage, languageName, onLanguageChange } from './i18n.js';
 import { cleanPlaces } from './places.js';
 import { loadSessions, saveSession, clearSessions, newSession, makeTurn, historyOf } from './sessions.js';
+import { renderSafety, safetyAnnouncement } from './safety.js';
 
 const noop = () => {};
 const NO_GLOBE = {
@@ -20,9 +21,9 @@ export { cleanPlaces };
 
 export function initApp({ globe = null, api = defaultApi } = {}) {
   const g = globe || NO_GLOBE;
-  const stage = $('stage'), panel = $('answer-panel'), glanceEl = $('glance');
+  const stage = $('stage'), panel = $('answer-panel'), glanceEl = $('glance'), safetyCard = $('safety-card');
   const state = { places: new Map(), lookup: null, topic: null, sources: [], busy: false, view: 'globe', holding: false,
-    lastQuestion: null, answerLanguage: null, session: null, viewing: null, tab: 'answer' };
+    lastQuestion: null, answerLanguage: null, session: null, viewing: null, tab: 'answer', safety: null };
   let lastCopy = '', copyTimer, graph = null, graphLoaded = false;
 
   // ---------------------------------------------------------------- layout
@@ -40,7 +41,9 @@ export function initApp({ globe = null, api = defaultApi } = {}) {
       if (sheet) bottom = sheet;
     } else {
       left = panelOpen ? panel.offsetWidth + 16 : 0;
-      right = glanceOpen ? glanceEl.offsetWidth + 16 : 0;
+      // The safety card shares the glance card's column and steps aside for it (see styles.css).
+      const column = glanceOpen ? glanceEl.offsetWidth : safetyCard.offsetWidth;
+      right = column ? column + 16 : 0;
     }
     stage.style.setProperty('--inset-l', left + 'px');
     stage.style.setProperty('--inset-r', right + 'px');
@@ -52,10 +55,24 @@ export function initApp({ globe = null, api = defaultApi } = {}) {
   // centred using stale sizes and ends up off-centre until the next resize.
   if (typeof ResizeObserver !== 'undefined') {
     const watcher = new ResizeObserver(() => requestAnimationFrame(layout));
-    [$('ask-form'), $('top-stack'), panel, glanceEl].forEach(node => watcher.observe(node));
+    [$('ask-form'), $('top-stack'), panel, glanceEl, safetyCard].forEach(node => watcher.observe(node));
   }
   document.fonts?.ready.then(layout);
   window.addEventListener('load', layout);
+
+  // One summary, two places: beside the globe, or inside the answer sheet on a phone.
+  function showSafety(safety) {
+    state.safety = safety || null;
+    for (const host of [safetyCard, $('safety-inline')]) {
+      host.hidden = !safety;
+      host.replaceChildren();
+      if (safety) {
+        host.setAttribute('aria-label', t('safety.title'));
+        host.append(renderSafety(safety));
+      }
+    }
+    layout();
+  }
 
   function setPanel(open) {
     panel.classList.toggle('is-open', open);
@@ -252,6 +269,7 @@ export function initApp({ globe = null, api = defaultApi } = {}) {
     state.topic = turns[0].question || null; // a briefing is about the session's subject, not "show the map"
     state.answerLanguage = last.data.requested_language || getLanguage();
     showSessionPlaces(turns);
+    showSafety(last.data.safety);
     $('answer-heading').textContent = t('answer.heading');
     document.body.dataset.hasAnswer = 'true';
     if (graph) graph.highlight(list);
@@ -304,6 +322,7 @@ export function initApp({ globe = null, api = defaultApi } = {}) {
     glance.close();
     state.lookup = null; state.sources = []; state.topic = null; state.lastQuestion = null;
     resetAnswerUI();
+    showSafety(null);
     $('session-turns').replaceChildren();
     $('answer-body').replaceChildren();
     $('sources').replaceChildren();
@@ -403,6 +422,7 @@ export function initApp({ globe = null, api = defaultApi } = {}) {
     state.viewing = null;
     setBusy(true);
     resetAnswerUI();
+    showSafety(null); // never beside a new answer, or a failed request
     announce(t('search.announce'));
     setPanel(true);
     setTab('answer');
@@ -423,14 +443,18 @@ export function initApp({ globe = null, api = defaultApi } = {}) {
       session.demo = session.demo || data.demo === true;
       session.turns = [...earlier, turn];
       state.session = session;
-      state.lastQuestion = text;
+      // From here on, only the masked question: on screen, in the store, and in a re-run. It shows what the search and the model were given.
+      const shown = data.status === 'out_of_scope' ? '' : (turn.question || text);
+      state.lastQuestion = turn.question || text;
       saveSession(session);
-      const list = paintSession(session, { live: true, data, text: data.status === 'out_of_scope' ? '' : text });
+      const list = paintSession(session, { live: true, data, text: shown });
       // The newest answer starts in view; earlier turns are a scroll away.
       if (earlier.length) $('answer-scroll').scrollTop = $('answer-body').offsetTop - $('answer-scroll').offsetTop;
       if (data.status === 'answered') {
         announce(t('answer.ready', { n: list.length }) + ' ' + tn('answer.ready_places', turn.data.locations.length));
       }
+      const safetyNote = safetyAnnouncement(turn.data.safety);
+      if (safetyNote) announce(`${$('announcement').textContent} ${safetyNote}`.trim());
       ok = true;
     } catch (error) {
       resetAnswerUI();
@@ -583,6 +607,7 @@ export function initApp({ globe = null, api = defaultApi } = {}) {
     setPlaceholder();
     syncRotate();
     syncSessionUI();
+    showSafety(state.safety);
     checkStatus();
   });
 

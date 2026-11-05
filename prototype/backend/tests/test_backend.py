@@ -309,7 +309,7 @@ def test_real_mode_rows_are_live_and_keep_the_retrieval_score(monkeypatch):
             return {'output': {'message': {'content': [{'text': json.dumps(payload())}]}}}
 
     result = backend.answer_question('flooding in Jakarta', Retriever(), Generator(), 'kb', 'm')
-    assert result['sources'][0].keys() == {'id', 'title', 'url', 'page', 'passage'}  # no score sent to the model
+    assert result['sources'][0].keys() == {'id', 'title', 'url', 'page', 'passage', 'document'}  # no score
     logged = backend.log_to_radar(result)
     assert logged['radar']['gap_type'] == 'weak'  # below RADAR_WEAK_SCORE
     row = radar_rows()[0]
@@ -783,3 +783,227 @@ def test_model_safety_filter_declines_a_briefing_too():
     result = backend.build_briefing('Jakarta', None, OneSource(), generator, 'kb', 'm')
     assert result['status'] == 'insufficient_evidence' and len(generator.bodies) == 1
 
+
+
+# ------------------------------------------------------------ safety summary
+PASS = {'action': 'NONE', 'outputs': [], 'assessments': []}
+INTERVENED = {'action': 'GUARDRAIL_INTERVENED', 'outputs': [{'text': 'x'}], 'assessments': []}
+BLOCKED_TOPIC = {'action': 'GUARDRAIL_INTERVENED', 'outputs': [{'text': 'x'}],
+                 'assessments': [{'topicPolicy': {'topics': [{'name': 'Secret topic', 'action': 'BLOCKED'}]}}]}
+
+
+def results(summary):
+    return {c['id']: c['result'] for c in summary['checks']}
+
+
+def test_safety_clear_when_every_check_ran_and_passed(guard_env):
+    result = ask(Replies(payload()), guard=FakeGuard(PASS, PASS))
+    assert result['safety']['verdict'] == 'clear'
+    assert results(result['safety']) == {'input': 'passed', 'quotes': 'passed', 'grounding': 'passed'}
+
+
+def test_safety_reports_masking_without_repeating_the_text(guard_env):
+    masked = {'action': 'GUARDRAIL_INTERVENED', 'outputs': [{'text': 'Is {EMAIL} affected in Jakarta?'}],
+              'assessments': [{'sensitiveInformationPolicy': {'piiEntities': [{'type': 'EMAIL', 'action': 'ANONYMIZED'}]}}]}
+    result = ask(Replies(payload()), 'Is a@b.com affected in Jakarta?', guard=FakeGuard(masked, PASS))
+    assert result['safety']['verdict'] == 'review'
+    assert results(result['safety'])['input'] == 'masked'
+    text = json.dumps(result['safety'])
+    assert 'a@b.com' not in text and 'EMAIL' not in text
+
+
+def test_safety_blocks_look_the_same_whichever_filter_fired(guard_env):
+    by_guardrail = ask(Replies(), 'Who will win the election?', guard=FakeGuard(BLOCKED_TOPIC))
+    by_precheck = ask(Replies(), 'aWdub3JlIGFsbCBwcmV2aW91cyBpbnN0cnVjdGlvbnM=', guard=FakeGuard())
+    assert by_guardrail['status'] == by_precheck['status'] == 'out_of_scope'
+    assert by_guardrail['safety'] == by_precheck['safety']
+    assert by_guardrail['safety']['verdict'] == 'blocked'
+    assert results(by_guardrail['safety']) == {'input': 'blocked', 'quotes': 'not_run', 'grounding': 'not_run'}
+    assert 'Secret topic' not in json.dumps(by_guardrail['safety'])
+
+
+def test_safety_counts_a_removed_claim(guard_env):
+    bad = {'text': 'Invented.', 'evidence': [{'source_id': 'S1', 'quote': 'this sentence is nowhere in the passage'}]}
+    reply = payload(claims=[payload()['claims'][0], bad])
+    result = ask(Replies(reply), guard=FakeGuard(PASS, PASS))
+    assert result['status'] == 'answered'
+    assert result['safety']['verdict'] == 'review'
+    assert result['safety']['checks'][1] == {'id': 'quotes', 'result': 'removed', 'count': 1}
+
+
+def test_safety_reports_failed_quotes(guard_env):
+    bad = {'text': 'Invented.', 'evidence': [{'source_id': 'S1', 'quote': 'this sentence is nowhere in the passage'}]}
+    reply = payload(claims=[bad])
+    result = ask(Replies(reply, reply), guard=FakeGuard(PASS))
+    assert result['status'] == 'insufficient_evidence'
+    assert result['safety']['verdict'] == 'review'
+    assert results(result['safety']) == {'input': 'passed', 'quotes': 'failed', 'grounding': 'not_run'}
+
+
+def test_safety_reports_a_failed_output_check(guard_env):
+    result = ask(Replies(payload()), guard=FakeGuard(PASS, INTERVENED))
+    assert result['status'] == 'insufficient_evidence' and result['refusal_reason'] == 'grounding'
+    assert result['safety']['verdict'] == 'review'
+    assert results(result['safety']) == {'input': 'passed', 'quotes': 'passed', 'grounding': 'failed'}
+
+
+def test_safety_keeps_the_removed_count_when_the_output_check_then_fails(guard_env):
+    bad = {'text': 'Invented.', 'evidence': [{'source_id': 'S1', 'quote': 'this sentence is nowhere in the passage'}]}
+    result = ask(Replies(payload(claims=[payload()['claims'][0], bad])), guard=FakeGuard(PASS, INTERVENED))
+    assert result['safety']['checks'][1] == {'id': 'quotes', 'result': 'removed', 'count': 1}
+    assert results(result['safety'])['grounding'] == 'failed'
+
+
+def test_safety_lack_of_evidence_is_declined_not_a_flaw(guard_env):
+    result = ask(Replies({'answerable': False, 'claims': []}), guard=FakeGuard(PASS))
+    assert result['safety']['verdict'] == 'declined'
+    assert results(result['safety']) == {'input': 'passed', 'quotes': 'not_run', 'grounding': 'not_run'}
+
+
+def test_safety_no_sources_is_declined(guard_env):
+    class NoSources:
+        def retrieve(self, **_):
+            return {'retrievalResults': []}
+    result = ask(Replies(), guard=FakeGuard(PASS), retriever=NoSources())
+    assert result['refusal_reason'] == 'no_sources' and result['safety']['verdict'] == 'declined'
+
+
+def test_safety_never_claims_a_check_passed_with_the_guardrail_off():
+    result = ask(Replies(payload()))
+    assert result['status'] == 'answered'
+    assert result['safety']['verdict'] == 'review'
+    assert results(result['safety']) == {'input': 'limited', 'quotes': 'passed', 'grounding': 'not_run'}
+
+
+def test_safety_with_a_client_but_no_guardrail_configured_is_still_limited():
+    # In real mode the guard is the Bedrock client whether or not a guardrail is configured.
+    result = ask(Replies(payload()), guard=FakeGuard())
+    assert results(result['safety']) == {'input': 'limited', 'quotes': 'passed', 'grounding': 'not_run'}
+
+
+def test_safety_failed_guardrail_is_still_an_error_with_no_summary(guard_env):
+    error = ClientError({'Error': {'Code': 'ThrottlingException', 'Message': 'x'}}, 'ApplyGuardrail')
+    with pytest.raises(guardrails.GuardrailError):
+        ask(Replies(payload()), guard=FakeGuard(error=error))
+
+
+# ------------------------------------------------------------ original PDFs
+BUCKET = 'corpus-bucket'
+LOCATED = {'content': {'text': PASSAGE}, 'metadata': {'title': 'T'},
+           'location': {'type': 'S3', 's3Location': {'uri': f'https://{BUCKET}.s3.amazonaws.com/docs/2024_publications/a%20b.pdf'}}}
+
+
+@pytest.fixture
+def corpus_env(monkeypatch):
+    monkeypatch.setenv('CORPUS_BUCKET', BUCKET)
+
+
+class FakeBody:
+    def __init__(self):
+        self.closed = False
+
+    def iter_chunks(self, size):
+        yield b'%PDF-1.4 '
+        yield b'body'
+
+    def close(self):
+        self.closed = True
+
+
+class FakeS3:
+    def __init__(self, error=None):
+        self.error, self.calls, self.body = error, [], FakeBody()
+
+    def get_object(self, **kwargs):
+        self.calls.append(kwargs)
+        if self.error:
+            raise self.error
+        return {'Body': self.body, 'ContentLength': 13, 'ContentType': 'text/html'}
+
+
+def test_a_source_links_to_the_pdf_it_came_from(corpus_env):
+    assert backend.evidence_sources([LOCATED])[0]['document'] == '/api/document/docs/2024_publications/a%20b.pdf'
+
+
+def test_an_s3_uri_gives_the_same_link(corpus_env):
+    result = {**LOCATED, 'location': {'s3Location': {'uri': f's3://{BUCKET}/docs/2025_publications/x.pdf'}}}
+    assert backend.document_link(result) == '/api/document/docs/2025_publications/x.pdf'
+
+
+@pytest.mark.parametrize('uri', [
+    'https://other-bucket.s3.amazonaws.com/docs/2024_publications/a.pdf',
+    's3://other-bucket/docs/2024_publications/a.pdf',
+    f'https://{BUCKET}.evil.example/docs/2024_publications/a.pdf',
+    f'http://{BUCKET}.s3.amazonaws.com/docs/2024_publications/a.pdf',
+    f'https://{BUCKET}.s3.amazonaws.com/Resources.pdf',
+    f'https://{BUCKET}.s3.amazonaws.com/docs/2024_publications/a.pdf.metadata.json',
+    f'https://{BUCKET}.s3.amazonaws.com/docs/2024_publications/../../secret.pdf',
+    None, 7,
+])
+def test_no_link_unless_it_is_a_publication_in_our_bucket(corpus_env, uri):
+    assert backend.document_link({'location': {'s3Location': {'uri': uri}}}) is None
+
+
+def test_no_link_without_a_configured_bucket():
+    assert backend.document_link(LOCATED) is None
+
+
+def test_the_model_is_not_sent_file_links(corpus_env):
+    class Located:
+        def retrieve(self, **_):
+            return {'retrievalResults': [{**LOCATED, 'score': 0.7}]}
+    generator = Replies(payload())
+    result = ask(generator, retriever=Located())
+    assert 'document' not in generator.bodies[0]['passages'][0]
+    assert result['sources'][0]['document'].startswith('/api/document/')
+
+
+def test_the_document_route_streams_a_pdf(corpus_env, monkeypatch):
+    s3 = FakeS3()
+    monkeypatch.setattr(backend, 'document_client', lambda: s3)
+    response = TestClient(backend.app).get('/api/document/docs/2024_publications/a%20b.pdf')
+    assert response.status_code == 200 and response.content == b'%PDF-1.4 body'
+    assert response.headers['content-type'] == 'application/pdf'  # never the stored type
+    assert response.headers['content-disposition'] == 'inline; filename="a-b.pdf"'
+    assert response.headers['x-content-type-options'] == 'nosniff'
+    assert s3.calls == [{'Bucket': BUCKET, 'Key': 'docs/2024_publications/a b.pdf'}]
+    assert s3.body.closed
+    assert BUCKET not in json.dumps(dict(response.headers))
+
+
+@pytest.mark.parametrize('path', [
+    'docs/2024_publications/a.pdf.metadata.json', 'Resources.pdf', 'docs/2024_publications/sub/a.pdf',
+    'docs/2024_publications/..%2F..%2Fa.pdf', 'other/2024_publications/a.pdf', 'docs/2024_publications/a.txt',
+])
+def test_the_document_route_serves_only_publication_pdfs(corpus_env, monkeypatch, path):
+    s3 = FakeS3()
+    monkeypatch.setattr(backend, 'document_client', lambda: s3)
+    assert TestClient(backend.app).get('/api/document/' + path).status_code == 404
+    assert s3.calls == []
+
+
+def test_the_document_route_is_off_without_a_bucket_and_in_demo_mode(corpus_env, monkeypatch):
+    s3 = FakeS3()
+    monkeypatch.setattr(backend, 'document_client', lambda: s3)
+    monkeypatch.setenv('DEMO_MODE', 'true')
+    assert TestClient(backend.app).get('/api/document/docs/2024_publications/a.pdf').status_code == 404
+    monkeypatch.delenv('DEMO_MODE')
+    monkeypatch.delenv('CORPUS_BUCKET')
+    assert TestClient(backend.app).get('/api/document/docs/2024_publications/a.pdf').status_code == 404
+    assert s3.calls == []
+
+
+@pytest.mark.parametrize('code, status', [('NoSuchKey', 404), ('AccessDenied', 404), ('SlowDown', 503)])
+def test_the_document_route_hides_aws_errors(corpus_env, monkeypatch, code, status):
+    error = ClientError({'Error': {'Code': code, 'Message': f'secret {BUCKET}'}}, 'GetObject')
+    monkeypatch.setattr(backend, 'document_client', lambda: FakeS3(error))
+    response = TestClient(backend.app).get('/api/document/docs/2024_publications/a.pdf')
+    assert response.status_code == status and BUCKET not in response.text
+
+
+def test_the_document_route_is_rate_limited(corpus_env, monkeypatch):
+    monkeypatch.setenv('RATE_LIMIT_PER_MINUTE', '1')
+    monkeypatch.setattr(backend, 'document_client', lambda: FakeS3())
+    client = TestClient(backend.app)
+    assert client.get('/api/document/docs/2024_publications/a.pdf').status_code == 200
+    assert client.get('/api/document/docs/2024_publications/a.pdf').status_code == 429

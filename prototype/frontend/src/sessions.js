@@ -3,6 +3,7 @@
 // everything read back is checked again; links still go through safeURL when rendered.
 import { validClaims } from './render.js';
 import { cleanPlaces } from './places.js';
+import { cleanSafety } from './safety.js';
 
 const KEY = 'askwri.sessions.v1';
 export const MAX_SESSIONS = 20;
@@ -24,6 +25,7 @@ function cleanTurn(turn) {
       claims: Array.isArray(data.claims) ? data.claims : [],
       sources: Array.isArray(data.sources) ? data.sources : [],
       locations: cleanPlaces(data.locations),
+      safety: cleanSafety(data.safety),
       language: data.language,
       requested_language: data.requested_language
     }
