@@ -1,0 +1,143 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#0d2923">
+<meta name="color-scheme" content="dark">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 viewBox=%270 0 24 24%27 fill=%27none%27 stroke=%27%23e3bc5b%27 stroke-width=%271.8%27 stroke-linecap=%27round%27 stroke-linejoin=%27round%27%3E%3Cpath d=%27M19 4C8 3 3 8 5 14c2 6 12 5 14-10Z%27/%3E%3Cpath d=%27M4 21 15 10%27/%3E%3C/svg%3E">
+<title>AskWRI — A world of research</title>
+</head>
+<body data-view="globe" data-state="idle">
+<a class="skip" href="#question">Skip to the question box</a>
+<svg aria-hidden="true" style="position:absolute;width:0;height:0;overflow:hidden"><defs>
+<symbol id="i-leaf" viewBox="0 0 24 24"><path d="M19 4C8 3 3 8 5 14c2 6 12 5 14-10Z"/><path d="M4 21 15 10"/></symbol>
+<symbol id="i-arrow" viewBox="0 0 24 24"><path d="M5 12h14m-6-6 6 6-6 6"/></symbol>
+<symbol id="i-close" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18"/></symbol>
+<symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol>
+<symbol id="i-minus" viewBox="0 0 24 24"><path d="M5 12h14"/></symbol>
+<symbol id="i-reset" viewBox="0 0 24 24"><path d="M4 12a8 8 0 1 0 3-6.2M4 4v4h4"/></symbol>
+<symbol id="i-rotate" viewBox="0 0 24 24"><path d="M20 12a8 8 0 1 1-2.5-5.8M20 4v4h-4"/></symbol>
+<symbol id="i-copy" viewBox="0 0 24 24"><rect x="8" y="8" width="12" height="13" rx="2"/><path d="M16 8V3H4v13h4"/></symbol>
+<symbol id="i-panel" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M9 4v16"/></symbol>
+</defs></svg>
+
+<div id="stage" style="--inset-l:0px;--inset-r:0px">
+  <div id="globe-viewport" tabindex="0" role="group"
+       aria-label="Interactive 3D Earth. Drag to rotate, scroll or pinch to zoom. Arrow keys rotate; plus and minus zoom.">
+    <div id="globe-message" role="status" hidden></div>
+  </div>
+  <div id="pin-layer" role="group" aria-label="Places mentioned in the sources"></div>
+  <svg id="leader" aria-hidden="true"><line id="leader-line" style="opacity:0"/></svg>
+
+  <header class="topbar">
+    <div class="brand"><svg aria-hidden="true"><use href="#i-leaf"/></svg><span>AskWRI</span></div>
+    <nav class="view-toggle" aria-label="View">
+      <button id="view-globe" type="button" aria-pressed="true">Globe</button>
+      <button id="view-graph" type="button" aria-pressed="false">Connections</button>
+      <a id="radar-link" href="/radar">Radar</a>
+    </nav>
+    <div class="status" id="connection" data-state="checking" role="status">
+      <span class="dot" aria-hidden="true"></span><span id="connection-text">Checking connection…</span>
+    </div>
+  </header>
+
+  <div class="top-stack" id="top-stack">
+    <div class="notices">
+      <p id="demo-banner" hidden><strong>Sample data.</strong> These answers are invented placeholders, not WRI research.</p>
+      <p id="guardrail-note" hidden>Safety filters are off: PII masking and topic limits are not active. See docs/guardrails-setup.md.</p>
+    </div>
+    <section id="intro" aria-label="Introduction">
+      <h1>A world of research.</h1>
+      <p>Ask a question. See where WRI’s research points.</p>
+    </section>
+  </div>
+
+  <aside id="answer-panel" aria-labelledby="answer-heading" aria-hidden="true" inert>
+    <header class="panel-head">
+      <h2 id="answer-heading">Answer</h2>
+      <div class="panel-actions">
+        <button type="button" class="ghost" id="copy-answer" hidden><svg aria-hidden="true"><use href="#i-copy"/></svg><span id="copy-label">Copy</span></button>
+        <button type="button" class="icon-button" id="answer-close" aria-label="Close answer"><svg aria-hidden="true"><use href="#i-close"/></svg></button>
+      </div>
+    </header>
+    <div class="panel-scroll">
+      <div id="answer-body"></div>
+      <section id="places-section" hidden>
+        <h3 class="section-label">Places in these sources</h3>
+        <div id="places" class="chips"></div>
+      </section>
+      <section id="sources-section" hidden>
+        <h3 class="section-label">Sources <span id="source-count" class="count"></span></h3>
+        <div id="sources"></div>
+      </section>
+      <p class="disclaimer">AI-generated synthesis. Check each claim against its quoted passage. Coverage is limited to the connected sample; missing evidence does not mean a claim is false.</p>
+    </div>
+  </aside>
+  <button type="button" id="answer-reopen" class="reopen" hidden><svg aria-hidden="true"><use href="#i-panel"/></svg>Show answer</button>
+
+  <aside id="glance" aria-labelledby="glance-title" aria-hidden="true" inert>
+    <header class="panel-head">
+      <div><h2 id="glance-title"></h2><p id="glance-kind" class="muted"></p></div>
+      <button type="button" class="icon-button" id="glance-close" aria-label="Close summary"><svg aria-hidden="true"><use href="#i-close"/></svg></button>
+    </header>
+    <div class="panel-scroll">
+      <section><h3 class="section-label">In this answer</h3><div id="glance-issues"></div></section>
+      <section><h3 class="section-label">WRI at a glance</h3><div id="glance-summary" aria-live="polite"></div></section>
+      <div id="glance-thread" aria-live="polite"></div>
+    </div>
+    <form id="glance-form" autocomplete="off">
+      <label class="sr-only" for="glance-input">Ask a follow-up about this place</label>
+      <input id="glance-input" type="text" minlength="3" maxlength="500" placeholder="Ask a follow-up about this place…">
+      <button id="glance-send" type="submit" class="primary small">Ask</button>
+    </form>
+    <a id="glance-brief" class="brief-link" target="_blank" rel="noopener">Full briefing <svg aria-hidden="true"><use href="#i-arrow"/></svg></a>
+  </aside>
+
+  <div class="globe-controls" role="group" aria-label="Globe controls">
+    <button type="button" id="globe-in" aria-label="Zoom in"><svg aria-hidden="true"><use href="#i-plus"/></svg></button>
+    <button type="button" id="globe-out" aria-label="Zoom out"><svg aria-hidden="true"><use href="#i-minus"/></svg></button>
+    <button type="button" id="globe-reset" aria-label="Reset view"><svg aria-hidden="true"><use href="#i-reset"/></svg></button>
+    <button type="button" id="globe-rotate" aria-label="Rotation" aria-pressed="true"><svg aria-hidden="true"><use href="#i-rotate"/></svg></button>
+  </div>
+
+  <form id="ask-form" class="askbar">
+    <div class="chips" aria-label="Example questions">
+      <button class="chip" type="button" data-question="What does WRI say about clean energy policy?">Clean energy policy</button>
+      <button class="chip" type="button" data-question="Where is urban flooding a problem?">Urban flooding</button>
+      <button class="chip" type="button" data-question="What was WRI's audited operating expenditure in fiscal year 2025?">Test the limits</button>
+    </div>
+    <div class="ask-row">
+      <select id="team" aria-label="Your team (optional)">
+        <option value="">Team</option>
+        <option>Cities</option><option>Food</option><option>Forests</option><option>Water</option>
+        <option>Climate</option><option>Energy</option><option>Communications</option>
+        <option>Brazil office</option><option>India office</option><option>Africa office</option>
+        <option>Mexico office</option><option>Indonesia office</option>
+      </select>
+      <label class="sr-only" for="question">Your research question</label>
+      <textarea id="question" rows="1" required minlength="3" maxlength="2000" placeholder="What would you like to understand?"></textarea>
+      <button class="primary" id="ask-button" type="submit"><span id="ask-button-text">Find evidence</span><svg aria-hidden="true"><use href="#i-arrow"/></svg></button>
+    </div>
+    <div id="search-progress" role="status" hidden><span class="bar"></span>Searching WRI publications…</div>
+  </form>
+
+  <section id="connections" aria-label="Research connection map" hidden>
+    <div id="graph-host">
+      <p id="graph-status" class="muted" role="status"></p>
+      <div id="graph-tooltip" hidden></div>
+      <aside id="graph-info" hidden aria-label="Publication details"></aside>
+      <ul id="graph-list" class="sr-only" aria-label="Publications in the map"></ul>
+    </div>
+    <div class="graph-controls" role="group" aria-label="Map controls">
+      <button type="button" id="graph-in" aria-label="Zoom in"><svg aria-hidden="true"><use href="#i-plus"/></svg></button>
+      <button type="button" id="graph-out" aria-label="Zoom out"><svg aria-hidden="true"><use href="#i-minus"/></svg></button>
+      <button type="button" id="graph-reset" aria-label="Reset view"><svg aria-hidden="true"><use href="#i-reset"/></svg></button>
+    </div>
+    <p class="graph-legend">Topics are hubs. Dashed lines link publications that share title terms; hover a line to see why. Gold rings mark sources from your latest answer. Hollow nodes are sample data.</p>
+  </section>
+</div>
+<div id="announcement" class="sr-only" role="status" aria-live="polite" aria-atomic="true"></div>
+<script type="module" src="/src/main.js"></script>
+</body>
+</html>

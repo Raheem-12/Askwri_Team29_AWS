@@ -53,6 +53,27 @@ flowchart LR
 2. Specialists search through one tool (AgentCore Gateway). The knowledge base runs hybrid search on Aurora pgvector, then a rerank model reorders results.
 3. The verifier checks each sentence against its cited passage and drops unsupported claims. If too little survives, the answer becomes a decline.
 4. Two chunk types serve different jobs: passage chunks for answers and citations, and document cards (summary plus tags) for discovery, coverage and time-aware answers.
+5. Every question is logged to Demand Radar (no names), which turns the ones AskWRI can't answer well into a ranked list of what WRI should load or research next.
+
+## Demand Radar
+
+Every question AskWRI can't answer well, from the globe or the agents chat page, is logged, grouped by topic and ranked, at `/radar`. Not every "no answer" means the same thing, so each gap is sorted by who can fix it:
+
+| Gap type | How it's detected | Action |
+|---|---|---|
+| Not loaded yet | Declined, but the question matches a report in the WRI catalog that isn't in the searchable corpus | Data Lab loads the report |
+| Weak coverage | Answered with a low top retrieval score, or declined although the matching report is loaded | Research teams update or extend the work |
+| No match in catalog | Declined, and nothing in the catalog matches | Research leadership: possible new research area |
+
+Clusters are ranked by questions × distinct teams × trend (this window vs the previous one). The page filters by gap type, team and language, and exports a "Top 10 gaps" summary as Markdown.
+
+Privacy: no names or user ids are stored, only the question (emails and phone numbers removed), an optional team label and the retrieval outcome. On the globe the stored text is the guardrail-masked question, and blocked questions are never stored. Rows older than `RADAR_RETENTION_DAYS` (default 90) are deleted.
+
+Current limits, to replace once the AWS sandbox is available:
+- **Catalog:** `data/catalog.csv` is a small sample. Replace it with metadata (title, year, program, url) for all WRI reports. No full text is needed.
+- **Clustering:** keyword based (TF-IDF), so it can't group questions across languages. Swap in Bedrock multilingual embeddings and one LLM call per cluster for names.
+- **Storage:** SQLite (`data/radar.db`). Move to DynamoDB for the deployed version.
+- **Demo data:** `scripts/seed_radar.py` adds simulated questions (labelled as simulated on the page). The questions are simulated; the classification and ranking are real.
 
 ## Design choices
 
@@ -60,6 +81,80 @@ flowchart LR
 - Security: private encrypted S3, least-privilege IAM, PII filters on questions and answers, no identifiers in memory or traces.
 - Evaluation: recall and precision against expected sources, plus a check that unanswerable questions are declined.
 
+## Repository layout
+
+```
+.env.example        Template for the local .env (see below)
+src/askwri/         Strands agents + AgentCore entrypoint, plus Demand Radar (radar, catalog, text)
+api/ ui/            Local FastAPI wrapper, simple chat page for the agents, and the /radar page
+scripts/            Corpus tooling: build_manifest, download_corpus, ingest, build_gazetteer, seed_radar
+eval/               Evaluation questions and runner
+tests/              Demand Radar tests
+data/               Manifests, URL lists, Radar's catalog (data/raw/ and radar.db are local only)
+prototype/
+  backend/          FastAPI service: cited Q&A, map locations, place glances, briefings, graph
+  frontend/         Vite + Three.js globe UI with pins, glance cards and the connection map
+infra/              S3 TLS bucket policy and a guardrail config (from the security branch)
+docs/               Setup guides: guardrails-setup.md, knowledge-base-handoff.md (plus WRI.pdf)
+```
+
+`src/` + `api/` and `prototype/` are two separate apps that share Demand Radar. `ASKWRI_MOCK=1` runs the agents app without AWS; `DEMO_MODE=true` runs the globe on labeled sample data. The prototype reads `BEDROCK_KB_ID` and `BEDROCK_MODEL_ID` and falls back to `KB_ID` and `MODEL_ID`, so one `.env` holds the values for both. Only the prototype loads the file itself. For `src/askwri`, `scripts/` and `eval/`, load it into your shell first: `set -a; source .env; set +a`.
+
+## Local files that are not in git
+
+These are git-ignored and shared between teammates directly. Put them in these exact locations:
+
+| File | Location | Notes |
+|---|---|---|
+| `.env` | repo root | Copy `.env.example`. It already selects **Claude Sonnet 5.5** (`us.anthropic.claude-sonnet-5-5`) and starts in `DEMO_MODE=true`. Never put AWS access keys in it. The prototype backend loads it automatically; real environment variables win. |
+| `data/raw/` | repo root | PDFs fetched by `scripts/download_corpus.py`. Run scripts from the repo root. |
+| `.venv/` | `prototype/backend/` and optionally the repo root | Per-app virtual environments. |
+| `node_modules/`, `dist/` | `prototype/frontend/` | From `npm ci` and `npm run build`. |
+
+## Safety: guardrails and PII
+
+Follow [`docs/guardrails-setup.md`](docs/guardrails-setup.md) to create the Bedrock guardrail (PII masking, off-topic blocking, grounding checks) from [`docs/guardrail.json`](docs/guardrail.json), then put `GUARDRAIL_ID` and `GUARDRAIL_VERSION` in `.env`. Until then the app runs with safety filters off and says so.
+
+## Sample data mode
+
+While there is no Knowledge Base, `DEMO_MODE=true` serves invented passages, all titled "SAMPLE", under a permanent banner. They go through the same verification code as real answers. When the Knowledge Base is ready, follow [`docs/knowledge-base-handoff.md`](docs/knowledge-base-handoff.md) and set `DEMO_MODE=false`.
+
+## Run the agents app locally (no AWS needed)
+
+This is the original chat page in `api/` + `ui/`, with `ASKWRI_MOCK=1` standing in for Bedrock. For the globe, see Setup below.
+
+```bash
+pip install fastapi uvicorn pytest httpx
+export ASKWRI_MOCK=1                      # keyword search over the manifest titles instead of Bedrock
+python scripts/seed_radar.py --reset      # optional: simulated demand for the demo
+uvicorn api.server:app --reload           # open http://localhost:8000 and http://localhost:8000/radar
+python -m pytest -q tests
+```
+
+On Windows PowerShell use `$env:ASKWRI_MOCK = "1"` instead of `export`.
+
 ## Setup
 
 (planned) Steps to deploy from this repo.
+
+Run the prototype locally. The virtual environment keeps `pip` and `python` on the same interpreter.
+
+Backend (terminal 1):
+
+```
+cd prototype/backend
+python3 -m venv .venv
+source .venv/bin/activate
+python -m pip install -r requirements.txt
+python -m uvicorn app:app --reload --port 8001
+```
+
+Frontend (terminal 2):
+
+```
+cd prototype/frontend
+npm ci
+npm run dev        # http://localhost:5173
+```
+
+Tests: `python -m pytest tests` (Radar), `cd prototype/backend && python -m pytest`, and `cd prototype/frontend && npm test`.

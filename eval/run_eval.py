@@ -13,7 +13,7 @@ for line in open("eval/questions.jsonl"):
     if not line.strip() or "FILL IN" in line:
         continue
     q = json.loads(line)
-    out = answer(q["question"])
+    out = answer(q["question"], log=False)  # eval runs stay out of Demand Radar
     cited = {(s["title"] + " " + s["url"]).lower() for s in out["sources"]}
 
     if not q["answerable"]:
