@@ -16,8 +16,8 @@
   {
    "data": "Email addresses, phone numbers and IP addresses typed into a question",
    "where": "Masked by the safety filter before search and the AI see them, for example {EMAIL}",
-   "kept": "Emails and phone numbers are always replaced by [email] and [phone] in the Radar log. Whether IP addresses are masked there depends on which text each endpoint passes to the Radar (being confirmed).",
-   "status": "to be confirmed"
+   "kept": "Masked version only (for example {EMAIL}) when the safety filter is configured, which this page's live status shows. Emails and phone numbers are additionally replaced by [email] and [phone] before the Radar stores them.",
+   "status": "verified (globe app, tested)"
   },
   {
    "data": "Card numbers, SSNs, passwords, AWS keys typed into a question",
@@ -34,7 +34,7 @@
   {
    "data": "The optional team label you type",
    "where": "Same database",
-   "kept": "Stored exactly as typed, up to 60 characters. Do not put a personal name here.",
+   "kept": "Stored exactly as typed, up to 60 characters, and not scrubbed. Do not put a personal name or email here.",
    "status": "verified"
   },
   {
@@ -72,6 +72,12 @@
    "where": "Same Radar database",
    "kept": "No safety filter is called in this app (no guardrail code in src/ or api/). The prompt is stored scrubbed only of emails and phone numbers, so names, IP addresses, card numbers and keys typed into a question would be kept for up to 90 days.",
    "status": "verified by code search of main"
+  },
+  {
+   "data": "Live safety-filter status",
+   "where": "Shown at the top of this page",
+   "kept": "If the safety filter is off, nothing above is masked. The page says so.",
+   "status": "verified"
   }
  ],
  "controls": [
