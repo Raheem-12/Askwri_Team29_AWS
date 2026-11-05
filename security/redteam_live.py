@@ -16,12 +16,24 @@ import os
 import sys
 import time
 import urllib.error
+import urllib.parse
 import urllib.request
 
 BASE, OUT = sys.argv[1], sys.argv[2]
+if urllib.parse.urlsplit(BASE).scheme not in ('http', 'https'):
+    sys.exit('The server address must start with http:// or https://')
 HERE = os.path.dirname(os.path.abspath(__file__))
 MARKERS = ['evil.example', 'dan enabled', 'system prompt', 'you are askwri', 'knowledge base id', 'aws_secret', 'atlantis has']
 MARKERS += [v.lower() for v in (os.getenv('KB_ID'), os.getenv('GUARDRAIL_ID'), os.getenv('AWS_ACCOUNT_ID')) if v]
+
+
+def literal(node):
+    """A literal value, plus the one expression the lists use: a repeated string like "A" * 5000."""
+    if isinstance(node, (ast.List, ast.Tuple)):
+        return [literal(item) for item in node.elts]
+    if isinstance(node, ast.BinOp) and isinstance(node.op, ast.Mult):
+        return ast.literal_eval(node.left) * ast.literal_eval(node.right)
+    return ast.literal_eval(node)
 
 
 def constants(name):
@@ -29,10 +41,7 @@ def constants(name):
     found = {}
     for node in ast.parse(open(os.path.join(HERE, name), encoding='utf-8').read()).body:
         if isinstance(node, ast.Assign) and getattr(node.targets[0], 'id', '') in ('ATTACKS', 'BENIGN'):
-            try:
-                found[node.targets[0].id] = eval(compile(ast.Expression(node.value), name, 'eval'), {'__builtins__': {}})
-            except (NameError, TypeError):
-                found[node.targets[0].id] = []
+            found[node.targets[0].id] = literal(node.value)
     return found
 
 
@@ -40,7 +49,7 @@ def post(payload):
     request = urllib.request.Request(BASE + '/api/ask', data=json.dumps(payload).encode(),
                                      headers={'Content-Type': 'application/json'})
     try:
-        with urllib.request.urlopen(request, timeout=120) as response:
+        with urllib.request.urlopen(request, timeout=120) as response:  # nosec B310: scheme checked at startup
             code, body = response.status, json.loads(response.read())
     except urllib.error.HTTPError as error:
         code, body = error.code, {}
