@@ -1,0 +1,1 @@
+{"Version":"2012-10-17","Statement":[{"Sid":"DenyInsecureTransport","Effect":"Deny","Principal":"*","Action":"s3:*","Resource":["arn:aws:s3:::askwri-team29-219211493679","arn:aws:s3:::askwri-team29-219211493679/*"],"Condition":{"Bool":{"aws:SecureTransport":"false"}}}]}

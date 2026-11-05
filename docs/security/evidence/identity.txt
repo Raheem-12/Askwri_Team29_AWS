@@ -1,0 +1,1 @@
+arn:aws:sts::219211493679:assumed-role/WSParticipantRole/Participant

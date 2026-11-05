@@ -1,0 +1,2 @@
+
+aws: [ERROR]: An error occurred (AccessDenied) when calling the ListObjectsV2 operation: User: arn:aws:sts::219211493679:assumed-role/WSParticipantRole/Participant is not authorized to perform: s3:ListBucket on resource: "arn:aws:s3:::askwri-team29-219211493679" with an explicit deny in a resource-based policy
