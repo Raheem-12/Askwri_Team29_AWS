@@ -47,8 +47,10 @@ export function checkAnswer(data) {
 
 export const api = {
   status: () => request('/api/status', { timeout: 10000 }),
-  ask: (question, team, language) => request('/api/ask', {
-    method: 'POST', body: withLanguage(team ? { question, team } : { question }, language) }).then(checkAnswer),
+  ask: (question, team, language, history) => request('/api/ask', {
+    method: 'POST',
+    body: withLanguage({ question, ...(team ? { team } : {}), ...(history?.length ? { history } : {}) }, language)
+  }).then(checkAnswer),
   glance: (place, question, language) => request('/api/glance', {
     method: 'POST', body: withLanguage(question ? { place, question } : { place }, language) }).then(checkAnswer),
   briefing: (place, topic, language) => request('/api/briefing', {

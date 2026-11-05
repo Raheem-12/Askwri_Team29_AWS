@@ -226,6 +226,33 @@ body[data-view="graph"] #guardrail-note { display: none; }
 @keyframes shimmer { to { background-position: -200% 0; } }
 @keyframes slide { from { transform: translateX(-100%); } to { transform: translateX(260%); } }
 @keyframes fade-in { from { opacity: 0; } to { opacity: 1; } }
+/* ---------- answer panel: slide toggle, past sessions, follow-ups ---------- */
+.panel-tabs { position: relative; display: grid; grid-template-columns: 1fr 1fr; flex: 0 1 240px; min-width: 0; padding: 3px; border-radius: 999px; background: rgba(242, 238, 221, 0.06); border: 1px solid var(--line); }
+.panel-tabs button { position: relative; z-index: 1; min-width: 0; border: 0; background: none; padding: 6px 8px; border-radius: 999px; color: var(--muted); font: 500 13px var(--sans); line-height: 1.2; cursor: pointer; transition: color 0.3s; }
+.panel-tabs button[aria-selected="true"] { color: var(--gold-ink); font-weight: 600; }
+.panel-tabs button:focus-visible { outline: 2px solid var(--gold); outline-offset: 2px; }
+.panel-tabs-thumb { position: absolute; top: 3px; bottom: 3px; left: 3px; width: calc(50% - 3px); border-radius: 999px; background: var(--gold); transition: transform 0.42s var(--ease); }
+.panel-tabs[data-active="past"] .panel-tabs-thumb { transform: translateX(100%); }
+.panel-panes { flex: 1; min-height: 0; overflow: hidden; display: flex; }
+.panel-track { flex: 0 0 200%; width: 200%; min-width: 0; display: flex; transition: transform 0.42s var(--ease); }
+.panel-panes[data-active="past"] .panel-track { transform: translateX(-50%); }
+.panel-pane { flex: 0 0 50%; width: 50%; min-width: 0; min-height: 0; display: flex; flex-direction: column; }
+#copy-answer.is-away { visibility: hidden; }
+#followup-form { display: flex; gap: 8px; padding: 10px 14px; border-top: 1px solid var(--line); }
+#followup-form[hidden] { display: none; }
+#followup-input { flex: 1; min-width: 0; padding: 8px 12px; border-radius: 10px; border: 1px solid var(--line); background: rgba(0, 0, 0, 0.18); color: var(--ink); font: inherit; }
+#followup-input:focus-visible { outline: 2px solid var(--gold); outline-offset: 1px; }
+#past-banner { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 4px 12px; margin-bottom: 14px; padding: 8px 12px; border-radius: 10px; border: 1px solid var(--line); color: var(--muted); font-size: 13px; }
+#past-banner[hidden] { display: none; }
+.turn { padding-bottom: 14px; margin-bottom: 14px; border-bottom: 1px solid var(--line); }
+#past-list { display: flex; flex-direction: column; gap: 8px; }
+.past-item { display: flex; flex-direction: column; gap: 4px; width: 100%; padding: 10px 12px; text-align: left; border-radius: 10px; border: 1px solid var(--line); background: none; color: var(--ink); cursor: pointer; font: inherit; transition: background 0.25s, border-color 0.25s; }
+.past-item:hover, .past-item[aria-current="true"] { background: rgba(242, 238, 221, 0.06); border-color: var(--gold); }
+.past-question { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; }
+.past-meta { color: var(--muted); font-size: 12px; }
+.past-sample { margin-left: 8px; color: var(--gold); font-weight: 600; letter-spacing: 0.04em; }
+#clear-sessions[hidden] { display: none; }
+
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation-duration: 0.001ms !important; animation-iteration-count: 1 !important; transition-duration: 0.001ms !important; transition-delay: 0s !important; }
   .pin-pulse { display: none; }
@@ -246,6 +273,7 @@ body[data-view="graph"] #guardrail-note { display: none; }
   #answer-panel, #glance { left: 0; right: 0; top: auto; bottom: 0; width: auto; max-height: 56dvh; border-radius: 20px 20px 0 0; transform: translateY(40px); padding-bottom: env(safe-area-inset-bottom); }
   #glance { bottom: 0; }
   /* one sheet at a time: opening a place card tucks the answer sheet away */
+  #answer-panel { height: 56dvh; } /* a fixed height lets the two panes scroll inside the sheet */
   body:has(#glance.is-open) #answer-panel { visibility: hidden; opacity: 0; transform: translateY(40px); transition-delay: 0s; }
   body:has(#answer-panel.is-open) .askbar, body:has(#glance.is-open) .askbar { transform: translateY(160%); opacity: 0; pointer-events: none; }
   .reopen { left: 12px; bottom: 76px; }

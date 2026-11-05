@@ -143,12 +143,49 @@ try {
   const drawn = await evalJS(`(() => { const c = document.querySelector('#graph-host canvas'); const d = c.getContext('2d').getImageData(0, 0, c.width, c.height).data; let n = 0; for (let i = 3; i < d.length; i += 4 * 97) if (d[i]) n++; return n; })()`);
   check('map canvas has drawn content', drawn > 50, `${drawn} sampled pixels`);
 
+  // ---- sessions: follow-up, slide toggle, new chat, past session
+  await navigate(BASE); await sleep(1200);
+  const typeAndAsk = async text => { await evalJS(`(() => { const q = document.getElementById('question'); q.value = ${JSON.stringify(text)}; q.dispatchEvent(new Event('input')); })()`); await mouse(...Object.values(await center('#ask-button'))); };
+  await typeAndAsk('forest restoration in Brazil and Kenya');
+  check('session: follow-up box shows under the answer', await waitFor(`!document.getElementById('followup-form').hidden && !!document.querySelector('#answer-body a.cite')`));
+  const followupBox = await evalJS(`(() => { const f = document.getElementById('followup-form').getBoundingClientRect(), p = document.getElementById('answer-panel').getBoundingClientRect(); return { inside: f.bottom <= p.bottom + 1 && f.top > p.top, h: f.height }; })()`);
+  check('session: follow-up box is pinned inside the panel', followupBox.inside && followupBox.h > 30, JSON.stringify(followupBox));
+  await evalJS(`document.getElementById('followup-input').value = 'forest restoration in Kenya'`);
+  await mouse(...Object.values(await center('#followup-send')));
+  check('session: follow-up stacks the earlier answer', await waitFor(`document.querySelectorAll('#session-turns .turn').length === 1 && !!document.querySelector('#answer-body a.cite') && document.getElementById('answer-panel').getAttribute('aria-busy') === 'false'`));
+  await sleep(600); await shot('11-follow-up');
+  await mouse(...Object.values(await center('#tab-past')));
+  await sleep(150);
+  const mid = await evalJS(`getComputedStyle(document.querySelector('.panel-track')).transform`);
+  check('toggle: the panes slide (still moving partway through)', /matrix/.test(mid) && !/, -?0, 0\)$/.test(mid) && await evalJS(`document.getElementById('panel-panes').dataset.active === 'past'`), mid);
+  await sleep(600);
+  const settled = await evalJS(`(() => { const a = document.getElementById('pane-past').getBoundingClientRect(), p = document.getElementById('answer-panel').getBoundingClientRect(); return Math.abs(a.left - p.left) < 2; })()`);
+  check('toggle: Past sessions pane lands inside the panel', settled);
+  await shot('12-past-empty');
+  await mouse(...Object.values(await center('#tab-answer')));
+  await sleep(600);
+  await typeAndAsk('urban flooding in Jakarta');
+  check('new chat: the bottom box clears old answers', await waitFor(`document.querySelectorAll('#session-turns .turn').length === 0 && /flooding/i.test(document.getElementById('answer-body').textContent) && document.getElementById('answer-panel').getAttribute('aria-busy') === 'false'`));
+  await mouse(...Object.values(await center('#tab-past')));
+  await sleep(700);
+  check('new chat: the old session is under Past sessions', await waitFor(`[...document.querySelectorAll('#past-list .past-item')].some(i => /forest restoration/.test(i.textContent) && /2 questions/.test(i.textContent))`));
+  await shot('13-past-list');
+  await mouse(...Object.values(await center('.past-item')));
+  check('past session: opens read-only with no follow-up box', await waitFor(`!document.getElementById('past-banner').hidden && document.getElementById('followup-form').hidden && document.querySelectorAll('#session-turns .turn').length === 1`));
+  await sleep(700); await shot('14-past-open');
+  await mouse(...Object.values(await center('#past-back')));
+  check('past session: back returns to the live session', await waitFor(`/flooding/i.test(document.getElementById('answer-body').textContent) && !document.getElementById('followup-form').hidden`));
+  await navigate(BASE); await sleep(800);
+  check('reload: earlier sessions are still reachable', await waitFor(`!document.getElementById('answer-reopen').hidden`));
+
   // ---- phone
   await send('Emulation.setDeviceMetricsOverride', { width: 390, height: 844, deviceScaleFactor: 2, mobile: true });
   await navigate(BASE); await sleep(1500); await shot('8-mobile-landing');
   await evalJS(`(() => { const q = document.getElementById('question'); q.value = 'forest restoration in Brazil and Kenya'; q.dispatchEvent(new Event('input')); document.getElementById('ask-form').requestSubmit(); })()`);
   await waitFor(`document.querySelectorAll('.pin').length >= 2`); await sleep(2800); await shot('9-mobile-answer');
   check('no horizontal overflow on a phone', await evalJS(`document.documentElement.scrollWidth <= window.innerWidth`));
+  const sheet = await evalJS(`(() => { const s = document.getElementById('answer-scroll'), f = document.getElementById('followup-form').getBoundingClientRect(); return { scrolls: s.scrollHeight >= s.clientHeight && s.clientHeight > 60, formVisible: f.bottom <= window.innerHeight + 1 && f.height > 30 }; })()`);
+  check('phone: the answer scrolls and the follow-up box stays on screen', sheet.scrolls && sheet.formVisible, JSON.stringify(sheet));
   pins = await visiblePins();
   if (pins.length) {
     await mouse(pins[0].x, pins[0].y);

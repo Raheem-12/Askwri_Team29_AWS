@@ -25,9 +25,10 @@ const answer = (over = {}) => ({
   ...over
 });
 
-function boot({ api = {}, mobile = false } = {}) {
+function boot({ api = {}, mobile = false, seed = null } = {}) {
   const dom = new JSDOM(html, { url: 'http://localhost:5173', pretendToBeVisual: true });
   const w = dom.window;
+  if (seed !== null) w.localStorage.setItem('askwri.sessions.v1', typeof seed === 'string' ? seed : JSON.stringify(seed));
   w.Element.prototype.scrollIntoView = () => {}; // jsdom has no layout; real browsers do
   w.matchMedia = query => ({ matches: query.includes('max-width') ? mobile : false, addEventListener() {}, removeEventListener() {} });
   Object.assign(globalThis, { window: w, document: w.document, Event: w.Event, CustomEvent: w.CustomEvent, HTMLElement: w.HTMLElement });
@@ -301,4 +302,226 @@ test('graph helpers: cited publications match by title; neighbors include the no
   const links = [{ source: 'h', target: 'a' }, { source: { id: 'h' }, target: { id: 'b' } }];
   assert.deepEqual([...neighborIds('h', links)].sort(), ['a', 'b', 'h']);
   assert.deepEqual([...neighborIds('a', links)].sort(), ['a', 'h']);
+});
+
+// ---------- sessions: follow-ups, the slide toggle, past sessions
+const asker = () => {
+  const sent = [];
+  return { sent, ask: async (q, team, language, history) => {
+    sent.push({ q, history });
+    return answer({ topic: `masked: ${q}`, answer: `Answer to ${q}`,
+      locations: q.includes('no places') ? [] : [place('jakarta-city', 'Jakarta', -6.17, 106.83)] });
+  } };
+};
+const followUp = async (t, text) => {
+  t.$('followup-input').value = text;
+  t.$('followup-form').dispatchEvent(new t.w.Event('submit', { bubbles: true, cancelable: true }));
+  await settle();
+};
+const stored = t => JSON.parse(t.w.localStorage.getItem('askwri.sessions.v1') || '[]');
+const pastSession = (over = {}) => ({ id: 'old', startedAt: 1790000000000, demo: false,
+  turns: [{ question: 'Old question', data: answer({ answer: 'Old answer' }) }], ...over });
+
+test('the follow-up box appears only once a session has an answer', async () => {
+  const t = boot({ api: asker() }); await settle();
+  assert.equal(t.$('followup-form').hidden, true);
+  await t.ask('First question');
+  assert.equal(t.$('followup-form').hidden, false);
+  t.close();
+});
+
+test('a follow-up sends only this session, stacks the earlier answer, and clears its box', async () => {
+  const a = asker();
+  const t = boot({ api: a }); await settle();
+  await t.ask('First question');
+  await followUp(t, 'Place the pins please');
+  assert.equal(a.sent[0].history.length, 0);
+  assert.deepEqual(a.sent[1].history, [{ question: 'masked: First question', answer: 'Answer to First question' }]);
+  assert.equal(t.$('session-turns').querySelectorAll('.turn').length, 1);
+  assert.match(t.$('session-turns').textContent, /masked: First question/);
+  assert.match(t.$('answer-body').textContent, /Place the pins please/);
+  assert.equal(t.$('followup-input').value, '');
+  assert.ok(t.$('session-turns').querySelector('a.cite').getAttribute('href').startsWith('#turn-1-'));
+  const ids = [...t.d.querySelectorAll('[id]')].map(e => e.id);
+  assert.equal(new Set(ids).size, ids.length, 'citation anchors stay unique');
+  t.close();
+});
+
+test('the bottom box starts a new chat: old answers leave, and the old session is in Past sessions', async () => {
+  const a = asker();
+  const t = boot({ api: a }); await settle();
+  await t.ask('First question');
+  await followUp(t, 'A follow-up');
+  await t.ask('A brand new question');
+  assert.equal(a.sent[2].history.length, 0, 'nothing from the old session is sent');
+  assert.equal(t.$('session-turns').children.length, 0);
+  assert.doesNotMatch(t.$('answer-panel').querySelector('#pane-answer').textContent, /First question/);
+  assert.equal(stored(t).length, 2);
+  t.$('tab-past').click();
+  const items = t.$('past-list').querySelectorAll('.past-item');
+  assert.equal(items.length, 1, 'the live session is not listed as past');
+  assert.match(items[0].textContent, /masked: First question/);
+  assert.match(items[0].textContent, /2 questions/);
+  t.close();
+});
+
+test('the toggle slides between panes, and only the visible pane can be reached', async () => {
+  const t = boot({ api: asker() }); await settle();
+  await t.ask('First question');
+  t.$('tab-past').click();
+  assert.equal(t.$('panel-panes').dataset.active, 'past');
+  assert.equal(t.$('panel-tabs').dataset.active, 'past');
+  assert.equal(t.$('tab-past').getAttribute('aria-selected'), 'true');
+  assert.equal(t.$('pane-answer').inert, true);
+  assert.equal(t.$('pane-past').inert, false);
+  t.$('panel-tabs').dispatchEvent(new t.w.KeyboardEvent('keydown', { key: 'ArrowLeft', bubbles: true }));
+  assert.equal(t.$('panel-panes').dataset.active, 'answer');
+  assert.equal(t.$('pane-past').inert, true);
+  t.close();
+});
+
+test('a past session opens read-only with its pins, and a live session survives the visit', async () => {
+  const a = asker();
+  const t = boot({ api: a, seed: [pastSession()] }); await settle();
+  await t.ask('Live question');
+  t.$('tab-past').click();
+  t.$('past-list').querySelector('.past-item').click();
+  assert.equal(t.$('panel-panes').dataset.active, 'answer');
+  assert.equal(t.$('past-banner').hidden, false);
+  assert.equal(t.$('followup-form').hidden, true);
+  assert.match(t.$('answer-body').textContent, /Old question/);
+  assert.equal(t.globe.points.length, 2, 'the old answer has two places');
+  t.$('past-back').click();
+  assert.match(t.$('answer-body').textContent, /masked: Live question/);
+  assert.equal(t.$('followup-form').hidden, false);
+  assert.equal(t.globe.points.length, 1);
+  assert.equal(a.sent.length, 1, 'looking at history costs no model call');
+  t.close();
+});
+
+test('sessions from an earlier visit can be reached from a fresh page', async () => {
+  const t = boot({ seed: [pastSession()] }); await settle();
+  assert.equal(t.$('answer-reopen').hidden, false);
+  assert.match(t.$('answer-reopen').textContent, /Past sessions/);
+  t.close();
+  const fresh = boot(); await settle();
+  assert.equal(fresh.$('answer-reopen').hidden, true);
+  fresh.close();
+});
+
+test('a failed follow-up keeps the session and pins and offers a retry that keeps the text', async () => {
+  let fail = false; const a = asker();
+  const t = boot({ api: { ask: async (...args) => { if (fail) throw new Error('The model returned an invalid evidence response. Please retry.'); return a.ask(...args); } } }); await settle();
+  await t.ask('First question');
+  fail = true;
+  await followUp(t, 'A follow-up');
+  assert.match(t.$('answer-body').textContent, /invalid evidence/);
+  assert.equal(t.$('session-turns').querySelectorAll('.turn').length, 1);
+  assert.equal(t.globe.points.length, 1, 'pins from the earlier turn stay');
+  assert.equal(t.$('followup-input').value, 'A follow-up');
+  assert.equal(stored(t)[0].turns.length, 1, 'failed turns are not saved');
+  fail = false;
+  t.$('answer-body').querySelector('.link-button').click();
+  await settle();
+  assert.equal(stored(t)[0].turns.length, 2);
+  t.close();
+});
+
+test('a failed new search leaves no chips or pins from the older answer', async () => {
+  let fail = false;
+  const t = boot({ api: { ask: async () => { if (fail) throw new Error('nope'); return answer(); } } }); await settle();
+  await t.ask('First question');
+  assert.equal(t.$('places-section').hidden, false);
+  fail = true;
+  await t.ask('Second question');
+  assert.equal(t.$('places-section').hidden, true);
+  assert.equal(t.$('places').children.length, 0);
+  assert.equal(t.globe.points.length, 0);
+  assert.equal(t.$('question').value, 'Second question', 'the question is kept for retry');
+  t.close();
+});
+
+test('a follow-up with no places keeps the pins, and their citations reach the earlier turn', async () => {
+  const t = boot({ api: asker() }); await settle();
+  await t.ask('First question');
+  await followUp(t, 'tell me about no places');
+  assert.equal(t.globe.points.length, 1);
+  assert.equal(t.app.state.lookup.get('S1').anchor, 'turn-1-1');
+  assert.ok(t.d.getElementById('turn-1-1'));
+  t.close();
+});
+
+test('storage holds the masked question, and a blocked question is never stored', async () => {
+  const typed = 'my card is 4111 1111 1111 1111';
+  const t = boot({ api: { ask: async () => ({ status: 'out_of_scope', answer: 'No.', claims: [], sources: [], locations: [], topic: null }) } }); await settle();
+  await t.ask(typed);
+  assert.equal(t.w.localStorage.getItem('askwri.sessions.v1').includes('4111'), false);
+  assert.equal(stored(t)[0].turns[0].question, '');
+  t.close();
+  const a = asker();
+  const m = boot({ api: a }); await settle();
+  await m.ask('Email me at someone@example.com');
+  assert.equal(stored(m)[0].turns[0].question, 'masked: Email me at someone@example.com');
+  m.close();
+});
+
+test('tampered or corrupt storage is ignored and cannot break the page', async () => {
+  for (const seed of ['{not json', '{"a":1}', JSON.stringify([{ id: 'x', startedAt: 'soon', turns: [] },
+    { id: 'y', startedAt: 1, turns: [{ question: 'q', data: { status: 'answered', claims: 'nope' } }] },
+    { id: 'z', startedAt: 1, turns: [{ question: 7, data: { status: 'answered', claims: [] } }] }])]) {
+    const t = boot({ seed }); await settle();
+    t.app.setTab('past');
+    assert.equal(t.$('past-list').querySelectorAll('.past-item').length, 0);
+    t.close();
+  }
+});
+
+test('stored markup stays text and a stored unsafe link is not rendered as a link', async () => {
+  const evil = pastSession({ turns: [{ question: '<img src=x onerror=alert(1)>', data: answer({
+    sources: [{ id: 'S1', title: '<b>T</b>', url: 'javascript:alert(1)', page: 1, passage: 'p' }] }) }] });
+  const t = boot({ seed: [evil] }); await settle();
+  t.app.openPast('old');
+  assert.equal(t.$('pane-answer').querySelector('img'), null);
+  assert.equal(t.$('sources').querySelector('a[href^="javascript"]'), null);
+  t.close();
+});
+
+test('a full or missing browser store never costs the answer', async () => {
+  const t = boot({ api: asker() }); await settle();
+  t.w.Storage.prototype.setItem = () => { throw new t.w.DOMException('full', 'QuotaExceededError'); };
+  await t.ask('First question');
+  assert.match(t.$('answer-body').textContent, /First question/);
+  await followUp(t, 'A follow-up');
+  assert.equal(t.$('session-turns').querySelectorAll('.turn').length, 1, 'the session still works in memory');
+  t.close();
+});
+
+test('only 20 sessions are kept', async () => {
+  const many = Array.from({ length: 20 }, (_, i) => pastSession({ id: `s${i}` }));
+  const t = boot({ api: asker(), seed: many }); await settle();
+  await t.ask('One more');
+  assert.equal(stored(t).length, 20);
+  assert.equal(stored(t)[0].turns[0].question, 'masked: One more');
+  assert.equal(stored(t).some(s => s.id === 's19'), false, 'the oldest goes first');
+  t.close();
+});
+
+test('clearing takes two clicks and keeps the live session', async () => {
+  const t = boot({ api: asker(), seed: [pastSession()] }); await settle();
+  await t.ask('Live question');
+  t.$('tab-past').click();
+  t.$('clear-sessions').click();
+  assert.equal(stored(t).length, 2);
+  t.$('clear-sessions').click();
+  assert.equal(stored(t).length, 1);
+  assert.equal(stored(t)[0].turns[0].question, 'masked: Live question');
+  assert.equal(t.$('past-list').querySelectorAll('.past-item').length, 0);
+  t.close();
+});
+
+test('sample-mode sessions stay labeled as sample data', async () => {
+  const t = boot({ seed: [pastSession({ demo: true })] }); await settle();
+  t.app.setTab('past');
+  assert.match(t.$('past-list').textContent, /SAMPLE/);
+  t.close();
 });

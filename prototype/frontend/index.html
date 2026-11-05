@@ -55,26 +55,54 @@
 
   <aside id="answer-panel" aria-labelledby="answer-heading" aria-hidden="true" inert>
     <header class="panel-head">
-      <h2 id="answer-heading" data-i18n="answer.heading">Answer</h2>
+      <h2 id="answer-heading" class="sr-only" data-i18n="answer.heading">Answer</h2>
+      <div class="panel-tabs" id="panel-tabs" role="tablist" data-active="answer" aria-label="Answer panel views" data-i18n-attr="aria-label:sessions.tabs_aria">
+        <span class="panel-tabs-thumb" aria-hidden="true"></span>
+        <button type="button" role="tab" id="tab-answer" aria-controls="pane-answer" aria-selected="true" data-i18n="answer.heading">Answer</button>
+        <button type="button" role="tab" id="tab-past" aria-controls="pane-past" aria-selected="false" tabindex="-1" data-i18n="sessions.tab">Past sessions</button>
+      </div>
       <div class="panel-actions">
         <button type="button" class="ghost" id="copy-answer" hidden><svg aria-hidden="true"><use href="#i-copy"/></svg><span id="copy-label" data-i18n="copy">Copy</span></button>
         <button type="button" class="icon-button" id="answer-close" aria-label="Close answer" data-i18n-attr="aria-label:answer.close"><svg aria-hidden="true"><use href="#i-close"/></svg></button>
       </div>
     </header>
-    <div class="panel-scroll">
-      <div id="answer-body"></div>
-      <section id="places-section" hidden>
-        <h3 class="section-label" data-i18n="places.heading">Places in these sources</h3>
-        <div id="places" class="chips"></div>
-      </section>
-      <section id="sources-section" hidden>
-        <h3 class="section-label"><span data-i18n="sources.heading">Sources</span> <span id="source-count" class="count"></span></h3>
-        <div id="sources"></div>
-      </section>
-      <p class="disclaimer" data-i18n="answer.disclaimer">AI-generated synthesis. Check each claim against its quoted passage. Coverage is limited to the connected sample; missing evidence does not mean a claim is false.</p>
+    <div class="panel-panes" id="panel-panes" data-active="answer">
+      <div class="panel-track">
+        <div class="panel-pane" id="pane-answer" role="tabpanel" aria-labelledby="tab-answer">
+          <div class="panel-scroll" id="answer-scroll">
+            <div id="past-banner" hidden>
+              <span data-i18n="sessions.viewing">Past session · read only</span>
+              <button type="button" class="link-button" id="past-back"></button>
+            </div>
+            <div id="session-turns"></div>
+          <div id="answer-body"></div>
+          <section id="places-section" hidden>
+            <h3 class="section-label" data-i18n="places.heading">Places in these sources</h3>
+            <div id="places" class="chips"></div>
+          </section>
+          <section id="sources-section" hidden>
+            <h3 class="section-label"><span data-i18n="sources.heading">Sources</span> <span id="source-count" class="count"></span></h3>
+            <div id="sources"></div>
+          </section>
+          <p class="disclaimer" data-i18n="answer.disclaimer">AI-generated synthesis. Check each claim against its quoted passage. Coverage is limited to the connected sample; missing evidence does not mean a claim is false.</p>
+          </div>
+          <form id="followup-form" autocomplete="off" hidden>
+            <label class="sr-only" for="followup-input" data-i18n="followup.label">Ask a follow-up about this session</label>
+            <input id="followup-input" type="text" minlength="3" maxlength="2000" placeholder="Ask a follow-up…" data-i18n-attr="placeholder:followup.placeholder">
+            <button id="followup-send" type="submit" class="primary small" data-i18n="followup.send">Ask</button>
+          </form>
+        </div>
+        <div class="panel-pane" id="pane-past" role="tabpanel" aria-labelledby="tab-past" inert>
+          <div class="panel-scroll">
+            <div id="past-list"></div>
+            <p class="disclaimer" data-i18n="sessions.saved_note">Saved only in this browser.</p>
+            <button type="button" class="link-button" id="clear-sessions" hidden data-i18n="sessions.clear">Clear past sessions</button>
+          </div>
+        </div>
+      </div>
     </div>
   </aside>
-  <button type="button" id="answer-reopen" class="reopen" hidden><svg aria-hidden="true"><use href="#i-panel"/></svg><span data-i18n="answer.show">Show answer</span></button>
+  <button type="button" id="answer-reopen" class="reopen" hidden><svg aria-hidden="true"><use href="#i-panel"/></svg><span id="answer-reopen-label" data-i18n="answer.show">Show answer</span></button>
 
   <aside id="glance" aria-labelledby="glance-title" aria-hidden="true" inert>
     <header class="panel-head">

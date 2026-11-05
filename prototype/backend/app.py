@@ -7,6 +7,7 @@ Production rules (unchanged from milestone 1):
     sample data is served, it is off by default, and responses say `demo: true`.
 """
 import json
+import logging
 import os
 import re
 import sqlite3
@@ -43,6 +44,12 @@ MAX_PINS = 8
 app = FastAPI(title='AskWRI', version='0.2.0')
 
 
+logger = logging.getLogger('askwri')
+# Sonnet 5.x counts hidden reasoning in the output limit: a 2,300-character answer used about 1,600.
+ANSWER_TOKENS = 4000
+MAX_SEARCH_CHARS = 1000
+
+
 # ---------------------------------------------------------------- schemas
 # Languages the answer text can be written in. Keys match the frontend's language picker.
 LANGUAGES = {'en': 'English', 'es': 'Spanish', 'pt': 'Brazilian Portuguese', 'fr': 'French',
@@ -50,10 +57,18 @@ LANGUAGES = {'en': 'English', 'es': 'Spanish', 'pt': 'Brazilian Portuguese', 'fr
 LanguageCode = Literal[tuple(LANGUAGES)]
 
 
+class Turn(BaseModel):
+    """An earlier question and answer from the same session. Sent by the browser, so untrusted."""
+    model_config = ConfigDict(extra='forbid')
+    question: str = Field(min_length=1, max_length=2000)
+    answer: str = Field(default='', max_length=2000)
+
+
 class Question(BaseModel):
     question: str = Field(min_length=3, max_length=2000)
     team: str | None = Field(default=None, max_length=60)
     language: LanguageCode = 'en'
+    history: list[Turn] = Field(default_factory=list, max_length=6)
 
 
 class GlanceRequest(BaseModel):
@@ -134,6 +149,14 @@ SYSTEM_BRIEFING = '''You are AskWRI. Write a short research briefing from WRI pa
 Return ONLY JSON: {"answerable":true,"overview":[claim],"key_findings":[claim]} where each
 claim is {"text":"...","evidence":[{"source_id":"S1","quote":"Exact supporting passage"}]}.
 Overview: 1 to 3 claims. Key findings: up to 6 claims, each a distinct finding.'''
+
+
+FOLLOW_UP = '''
+This turn continues a session. "conversation" holds the earlier questions and answers. Use it
+only to work out what the new question refers to; it is never evidence. Every claim, quote and
+location must still come from the supplied passages. If the new question asks to show or map
+places, report what the passages say about the places the conversation concerns, and list those
+places in "locations".'''
 
 
 def with_language(system, language):
@@ -235,6 +258,10 @@ def refusal(extra=None):
 
 
 def validate_answer(payload, sources):
+    # A refusal needs no schema check: it adds nothing to verify, and the model sometimes adds
+    # a key such as "reason" to one. Only a real refusal gets here; other replies are validated.
+    if isinstance(payload, dict) and payload.get('answerable') is False:
+        return refusal()
     payload = dict(payload) if isinstance(payload, dict) else payload
     raw_locations = payload.pop('locations', []) if isinstance(payload, dict) else []
     generated = Generation.model_validate(payload)
@@ -252,6 +279,8 @@ def validate_answer(payload, sources):
 
 
 def validate_briefing(payload, sources):
+    if isinstance(payload, dict) and payload.get('answerable') is False:
+        return None
     generated = BriefingGeneration.model_validate(payload)
     claims = generated.overview + generated.key_findings
     if not generated.answerable or not claims:
@@ -364,19 +393,75 @@ def generate(generator, model_id, mode, system, payload, max_tokens):
     try:
         return parse_model_json(raw)
     except ValueError:
-        raise HTTPException(502, 'The model returned an invalid evidence response. Please retry.')
+        log_invalid(mode, 'no_json', stop=response.get('stopReason'), chars=len(raw))
+        raise invalid_response()
 
 
 def invalid_response():
     return HTTPException(502, 'The model returned an invalid evidence response. Please retry.')
 
 
+def log_invalid(mode, kind, stop=None, chars=None, fields=None):
+    """Why a reply was rejected, for diagnosis. Counts and field names only, never any text:
+    replies quote passages and can echo the question."""
+    logger.warning('invalid model reply: mode=%s kind=%s stop=%s chars=%s fields=%s',
+                   mode, kind, stop, chars, fields)
+
+
+def error_fields(error):
+    if not isinstance(error, ValidationError):
+        return None
+    # Location parts are schema paths, but an unexpected key is named by the model: keep it short.
+    return sorted({'.'.join(re.sub(r'\W', '', str(p))[:30] for p in e['loc']) for e in error.errors()})[:8]
+
+
+def generate_checked(generator, model_id, mode, system, body, max_tokens, check):
+    """Model reply passed through `check`. One retry: the failure is rare and random, and nothing
+    is lost by asking again. Every verification rule still applies to the second reply."""
+    for attempt in (1, 2):
+        try:
+            payload = generate(generator, model_id, mode, system, body, max_tokens)
+            try:
+                return check(payload)
+            except (ValidationError, TypeError, AttributeError) as error:
+                log_invalid(mode, 'schema', fields=error_fields(error))
+                raise invalid_response()
+        except HTTPException:
+            if attempt == 2:
+                raise
+
+
+def checked_history(guard, history):
+    """Earlier turns, masked. Each piece is checked alone, as it was when first asked: the guardrail
+    reads one long transcript as a prompt attack, which would block the rest of the session."""
+    if not guard:
+        return [t.model_dump() for t in history]
+    questions = {t.question: guardrails.check_input(guard, t.question) for t in {t.question: t for t in history}.values()}
+    answers = {a: guardrails.check_earlier_answer(guard, a) for a in {t.answer for t in history} if a}
+    return [{'question': questions[t.question], 'answer': answers.get(t.answer, '')} for t in history]
+
+
+def follow_up_query(conversation, question):
+    """What to search for. The first question holds the session's subject and the latest holds
+    what it has narrowed to; a follow-up like "show these on the map" has no subject of its own."""
+    parts = [conversation[0]['question'], conversation[-1]['question'], question]
+    return ' '.join(dict.fromkeys(parts))[:MAX_SEARCH_CHARS]
+
+
 def answer_question(question, retriever, generator, kb_id, model_id, guard=None,
-                    mode='ask', system=SYSTEM_ASK, extra=None, count=6, search_query=None, language='en'):
+                    mode='ask', system=SYSTEM_ASK, extra=None, count=6, search_query=None, language='en',
+                    history=None):
     """Shared by /api/ask and /api/glance. `question` is already scoped by the caller.
-    `search_query` overrides what is sent to retrieval; it must not contain user text."""
+    `search_query` overrides what is sent to retrieval; it must not contain user text.
+    `history` holds earlier turns of a session: untrusted, so it is checked like the question.
+    It helps find passages and explains the question, but quotes must come from this retrieval."""
+    extra = dict(extra or {})
     try:
         question = guardrails.check_input(guard, question) if guard else question
+        if history:
+            extra['conversation'] = checked_history(guard, history)
+            search_query = follow_up_query(extra['conversation'], question)
+            system += FOLLOW_UP
     except guardrails.Blocked as blocked:
         return {'status': 'out_of_scope', 'answer': str(blocked), 'claims': [], 'sources': [],
                 'locations': [], 'topic': None, 'demo': demo_mode(), **language_fields(language)}
@@ -384,12 +469,9 @@ def answer_question(question, retriever, generator, kb_id, model_id, guard=None,
     done = {'topic': question, 'demo': demo_mode(), '_top_score': top_score, **language_fields(language)}
     if not sources:
         return {**validate_answer({'answerable': False, 'claims': []}, []), **done}
-    payload = generate(generator, model_id, mode, with_language(system, language),
-                       {'question': question, 'passages': sources, **(extra or {})}, 1800)
-    try:
-        result = validate_answer(payload, sources)
-    except (ValidationError, TypeError, AttributeError):
-        raise invalid_response()
+    result = generate_checked(generator, model_id, mode, with_language(system, language),
+                              {'question': question, 'passages': sources, **extra}, ANSWER_TOKENS,
+                              lambda payload: validate_answer(payload, sources))
     if guard and result['status'] == 'answered' and \
             not guardrails.check_output(guard, result['answer'], question, [s['passage'] for s in result['sources']]):
         result = refusal()
@@ -426,12 +508,9 @@ def build_briefing(place, topic, retriever, generator, kb_id, model_id, guard=No
     sources, _top_score = retrieve_sources(retriever, kb_id, query, 10)
     if not sources:
         return {**done, 'status': 'insufficient_evidence', 'message': REFUSAL, 'sections': [], 'sources': []}
-    payload = generate(generator, model_id, 'briefing', with_language(SYSTEM_BRIEFING, language),
-                       {'place': place, 'topic': topic or 'main research issues', 'passages': sources}, 3000)
-    try:
-        briefing = validate_briefing(payload, sources)
-    except (ValidationError, TypeError, AttributeError):
-        raise invalid_response()
+    briefing = generate_checked(generator, model_id, 'briefing', with_language(SYSTEM_BRIEFING, language),
+                                {'place': place, 'topic': topic or 'main research issues', 'passages': sources},
+                                3000, lambda payload: validate_briefing(payload, sources))
     if briefing is None:
         return {**done, 'status': 'insufficient_evidence', 'message': REFUSAL, 'sections': [], 'sources': []}
     text = ' '.join(c['text'] for s in briefing['sections'] for c in s['claims'])
@@ -473,9 +552,16 @@ def ask(request: Question):
     question = request.question.strip()
     if len(question) < 3:
         raise HTTPException(422, 'Enter a research question.')
-    return run_aws(lambda retriever, generator, guard, kb, model: log_to_radar(
-        answer_question(question, retriever, generator, kb, model, guard, language=request.language),
-        team=request.team))
+
+    def run(retriever, generator, guard, kb, model):
+        result = answer_question(question, retriever, generator, kb, model, guard,
+                                 language=request.language, history=request.history)
+        if request.history:  # "show these on the map" says nothing about demand without its context
+            result.pop('_top_score', None)
+            return result
+        return log_to_radar(result, team=request.team)
+
+    return run_aws(run)
 
 
 @app.post('/api/glance')

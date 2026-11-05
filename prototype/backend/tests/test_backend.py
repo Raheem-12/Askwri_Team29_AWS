@@ -486,3 +486,174 @@ def test_demo_mode_says_answers_stay_in_english(monkeypatch):
     assert 'hi' in client.get('/api/status').json()['languages']
     body = client.post('/api/ask', json={'question': 'electric buses in cities', 'language': 'es'}).json()
     assert body['language'] == 'en' and body['requested_language'] == 'es'
+
+
+# ------------------------------------------------------------ invalid replies
+class Replies:
+    """A generator that answers from a list, and records what it was sent."""
+    def __init__(self, *replies):
+        self.replies, self.bodies, self.systems = list(replies), [], []
+
+    def converse(self, modelId=None, system=None, messages=None, inferenceConfig=None, **_):
+        self.bodies.append(json.loads(messages[0]['content'][0]['text']))
+        self.systems.append(system[0]['text'])
+        self.tokens = inferenceConfig['maxTokens']
+        reply = self.replies.pop(0)
+        return {'stopReason': 'end_turn',
+                'output': {'message': {'content': [{'text': reply if isinstance(reply, str) else json.dumps(reply)}]}}}
+
+
+class OneSource:
+    def __init__(self):
+        self.queries = []
+
+    def retrieve(self, knowledgeBaseId=None, retrievalQuery=None, retrievalConfiguration=None, **_):
+        self.queries.append(retrievalQuery['text'])
+        return {'retrievalResults': [{'content': {'text': PASSAGE}, 'score': 0.7,
+                                      'metadata': {'title': 'T', 'public_url': None}}]}
+
+
+class MaskingGuard:
+    """Blocks text containing `blocked` and masks the word SECRET."""
+    def __init__(self, blocked=None):
+        self.blocked, self.seen = blocked, []
+
+    def apply_guardrail(self, guardrailIdentifier=None, guardrailVersion=None, source=None, content=None):
+        text = content[0]['text']['text']
+        self.seen.append((source, text))
+        if source == 'OUTPUT' and 'SECRET' not in text:
+            return {'action': 'NONE'}
+        if self.blocked and self.blocked in text:
+            return {'action': 'GUARDRAIL_INTERVENED', 'outputs': [],
+                    'assessments': [{'topicPolicy': {'topics': [{'action': 'BLOCKED'}]}}]}
+        if 'SECRET' in text:
+            return {'action': 'GUARDRAIL_INTERVENED', 'outputs': [{'text': text.replace('SECRET', '{MASK}')}], 'assessments': []}
+        return {'action': 'NONE'}
+
+
+def ask(generator, question='How is Jakarta affected?', guard=None, **kwargs):
+    return backend.answer_question(question, kwargs.pop('retriever', OneSource()), generator, 'kb', 'm', guard, **kwargs)
+
+
+def test_refusal_with_extra_keys_is_a_refusal_not_an_error():
+    result = backend.validate_answer({'answerable': False, 'claims': [], 'reason': 'not relevant'}, SOURCES)
+    assert result['status'] == 'insufficient_evidence'
+
+
+def test_a_truthy_answerable_is_still_fully_validated():
+    with pytest.raises(backend.ValidationError):
+        backend.validate_answer({'answerable': True, 'claims': [], 'reason': 'extra key'}, SOURCES)
+
+
+def test_invalid_reply_is_retried_once_and_the_retry_can_succeed():
+    generator = Replies('I cannot place pins on a map.', payload())
+    assert ask(generator)['status'] == 'answered'
+    assert len(generator.bodies) == 2
+
+
+def test_retry_is_still_held_to_the_quote_rule():
+    fabricated = payload()
+    fabricated['claims'][0]['evidence'][0]['quote'] = 'a sentence the passage never contains'
+    assert ask(Replies('not json', fabricated))['status'] == 'insufficient_evidence'
+
+
+def test_second_invalid_reply_is_a_502_and_the_log_holds_no_text(caplog):
+    secret = 'jakarta-private-reply-text'
+    generator = Replies(f'prose about {secret}', {'answerable': True, 'claims': [{'text': secret}], secret: 1})
+    with pytest.raises(backend.HTTPException) as failure:
+        ask(generator)
+    assert failure.value.status_code == 502 and len(generator.bodies) == 2
+    assert 'kind=no_json' in caplog.text and 'kind=schema' in caplog.text
+    assert 'prose about' not in caplog.text and 'jakarta-private-reply-text ' not in caplog.text
+    assert len(max(caplog.text.split(), key=len)) < 400
+
+
+def test_answers_have_room_for_hidden_reasoning():
+    generator = Replies(payload())
+    ask(generator)
+    assert generator.tokens == 4000
+
+
+# ------------------------------------------------------------ follow-ups
+HISTORY = [backend.Turn(question='Where is flooding a problem?', answer='Flooding strains drainage.')]
+
+
+def test_follow_up_searches_with_the_earlier_question_and_sends_the_conversation():
+    generator, retriever = Replies(payload()), OneSource()
+    result = ask(generator, 'Place the pins on the map', retriever=retriever, history=HISTORY)
+    assert retriever.queries == ['Where is flooding a problem? Place the pins on the map']
+    assert generator.bodies[0]['conversation'] == [{'question': 'Where is flooding a problem?', 'answer': 'Flooding strains drainage.'}]
+    assert 'never evidence' in generator.systems[0]
+    assert [p['name'] for p in result['locations']] == ['Jakarta']
+
+
+def test_new_question_has_no_conversation_and_no_follow_up_prompt():
+    generator, retriever = Replies(payload()), OneSource()
+    ask(generator, 'Where is flooding a problem?', retriever=retriever)
+    assert 'conversation' not in generator.bodies[0] and 'never evidence' not in generator.systems[0]
+    assert retriever.queries == ['Where is flooding a problem?']
+
+
+def test_quote_copied_from_the_conversation_is_not_evidence():
+    invented = 'The earlier answer says this and no passage does.'
+    fake = payload()
+    fake['claims'][0]['evidence'][0]['quote'] = invented
+    history = [backend.Turn(question='Q?', answer=invented)]
+    assert ask(Replies(fake), 'Tell me more about that', history=history)['status'] == 'insufficient_evidence'
+
+
+def test_history_is_masked_before_search_and_model(guard_env):
+    guard, generator, retriever = MaskingGuard(), Replies(payload()), OneSource()
+    history = [backend.Turn(question='Flooding near SECRET?', answer='Drainage near SECRET.')]
+    ask(generator, 'Place the pins', guard=guard, retriever=retriever, history=history)
+    assert 'SECRET' not in retriever.queries[0] and '{MASK}' in retriever.queries[0]
+    assert 'SECRET' not in json.dumps(generator.bodies[0]) and '{MASK}' in generator.bodies[0]['conversation'][0]['answer']
+
+
+def test_search_keeps_the_subject_after_several_follow_ups():
+    retriever = OneSource()
+    history = [backend.Turn(question='Forest restoration in Africa?', answer='a'),
+               backend.Turn(question='What about Kenya?', answer='b'),
+               backend.Turn(question='Place the pins', answer='c')]
+    ask(Replies(payload()), 'Place the pins', retriever=retriever, history=history)
+    assert retriever.queries == ['Forest restoration in Africa? Place the pins']
+
+
+def test_history_is_checked_piece_by_piece_never_as_one_transcript(guard_env):
+    # The real guardrail flags a long "Q: ... A: ..." transcript as a prompt attack.
+    guard = MaskingGuard()
+    history = [backend.Turn(question='Where is flooding?', answer='Drainage fails.'),
+               backend.Turn(question='Place the pins', answer='Drainage fails.'),
+               backend.Turn(question='Place the pins', answer='')]
+    ask(Replies(payload()), 'Place the pins', guard=guard, history=history)
+    inputs = [text for source, text in guard.seen if source == 'INPUT']
+    answers = [text for source, text in guard.seen if source == 'OUTPUT' and text == 'Drainage fails.']
+    assert sorted(inputs) == ['Place the pins', 'Place the pins', 'Where is flooding?']  # the new one, then each unique one
+    assert len(answers) == 1, 'earlier answers go through as output, once each'
+    assert not any('Q:' in text for _, text in guard.seen)
+
+
+def test_blocked_history_stops_before_retrieval(guard_env):
+    guard, generator, retriever = MaskingGuard(blocked='forbidden'), Replies(), OneSource()
+    history = [backend.Turn(question='a forbidden thing', answer='')]
+    result = ask(generator, 'Place the pins', guard=guard, retriever=retriever, history=history)
+    assert result['status'] == 'out_of_scope' and retriever.queries == [] and generator.bodies == []
+
+
+def test_follow_ups_are_not_logged_to_radar_but_new_questions_are(monkeypatch):
+    monkeypatch.setenv('DEMO_MODE', 'true')
+    client = TestClient(backend.app)
+    first = client.post('/api/ask', json={'question': 'Where is urban flooding a problem?'}).json()
+    assert first['radar'] is not None
+    second = client.post('/api/ask', json={'question': 'Place the pins on the map',
+                                           'history': [{'question': 'Where is urban flooding a problem?', 'answer': 'x'}]})
+    assert second.status_code == 200 and 'radar' not in second.json() and '_top_score' not in second.json()
+    assert backend.radar.report(days=7)['stats']['questions'] == 1
+
+
+def test_oversized_or_malformed_history_is_rejected(monkeypatch):
+    monkeypatch.setenv('DEMO_MODE', 'true')
+    client = TestClient(backend.app)
+    turn = {'question': 'q', 'answer': 'a'}
+    for history in ([turn] * 7, [{**turn, 'answer': 'a' * 2001}], [{**turn, 'passages': []}]):
+        assert client.post('/api/ask', json={'question': 'follow up', 'history': history}).status_code == 422

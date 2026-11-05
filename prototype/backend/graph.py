@@ -24,14 +24,17 @@ def _terms(title):
 
 
 def _read_manifests():
+    # manifest_corpus.csv lists what is really in the Knowledge Base (scripts/build_corpus_manifest.py).
+    # The two older files describe an earlier sample and are only used when it is missing.
+    names = ('manifest_corpus.csv',) if (DATA / 'manifest_corpus.csv').exists() else ('manifest.csv', 'manifest_extra.csv')
     seen, docs = set(), []
-    for name in ('manifest.csv', 'manifest_extra.csv'):
+    for name in names:
         path = DATA / name
         if not path.exists():
             continue
         with path.open(encoding='utf-8', newline='') as handle:
             for row in csv.DictReader(handle):
-                key = (row.get('url') or row.get('title') or '').strip().casefold()
+                key = (row.get('title') or row.get('url') or '').strip().casefold()
                 if not key or key in seen:
                     continue  # manifest_extra repeats rows from manifest
                 seen.add(key)

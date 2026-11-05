@@ -71,9 +71,19 @@ def _apply(client, source, content):
 
 def check_input(client, text):
     """Return the question to use downstream (PII masked). Raises Blocked / GuardrailError."""
+    return _checked(client, 'INPUT', text)
+
+
+def check_earlier_answer(client, text):
+    """Check an earlier answer sent back by the browser. It is model output, so it is checked as
+    output: the prompt-attack filter reads a question-and-answer transcript as an attack."""
+    return _checked(client, 'OUTPUT', text)
+
+
+def _checked(client, source, text):
     if not configured():
         return text
-    response = _apply(client, 'INPUT', [{'text': {'text': text}}])
+    response = _apply(client, source, [{'text': {'text': text}}])
     if response.get('action') != 'GUARDRAIL_INTERVENED':
         return text
     if _blocked(response.get('assessments')):

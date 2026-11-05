@@ -5,6 +5,8 @@ import { createPins } from './pins.js';
 import { createGlance } from './glance.js';
 import { createGraph } from './graph.js';
 import { t, tn, getLanguage, languageName, onLanguageChange } from './i18n.js';
+import { cleanPlaces } from './places.js';
+import { loadSessions, saveSession, clearSessions, newSession, makeTurn, historyOf } from './sessions.js';
 
 const noop = () => {};
 const NO_GLOBE = {
@@ -14,19 +16,13 @@ const NO_GLOBE = {
 const MOBILE = '(max-width: 760px)';
 const GAP_KEYS = { not_loaded: 'gap.not_loaded', weak: 'gap.weak', never_published: 'gap.never_published' };
 
-export function cleanPlaces(list) {
-  return (Array.isArray(list) ? list : [])
-    .filter(p => p && typeof p.id === 'string' && typeof p.name === 'string'
-      && Number.isFinite(p.lat) && Math.abs(p.lat) <= 90 && Number.isFinite(p.lon) && Math.abs(p.lon) <= 180
-      && Array.isArray(p.issues))
-    .map(p => ({ ...p, issues: p.issues.filter(i => i && typeof i.issue === 'string') }));
-}
+export { cleanPlaces };
 
 export function initApp({ globe = null, api = defaultApi } = {}) {
   const g = globe || NO_GLOBE;
   const stage = $('stage'), panel = $('answer-panel'), glanceEl = $('glance');
   const state = { places: new Map(), lookup: null, topic: null, sources: [], busy: false, view: 'globe', holding: false,
-    lastQuestion: null, answerLanguage: null };
+    lastQuestion: null, answerLanguage: null, session: null, viewing: null, tab: 'answer' };
   let lastCopy = '', copyTimer, graph = null, graphLoaded = false;
 
   // ---------------------------------------------------------------- layout
@@ -65,7 +61,10 @@ export function initApp({ globe = null, api = defaultApi } = {}) {
     panel.classList.toggle('is-open', open);
     panel.inert = !open;
     panel.setAttribute('aria-hidden', String(!open));
-    $('answer-reopen').hidden = open || !state.lookup;
+    // With nothing on screen, the button reaches the sessions kept from earlier visits.
+    const hasCurrent = Boolean(state.session || document.body.dataset.hasAnswer);
+    $('answer-reopen-label').textContent = t(hasCurrent ? 'answer.show' : 'sessions.tab');
+    $('answer-reopen').hidden = open || !(hasCurrent || pastSessions().length);
     layout();
   }
 
@@ -105,6 +104,7 @@ export function initApp({ globe = null, api = defaultApi } = {}) {
   // A citation in the glance card opens the matching source in the answer panel.
   document.addEventListener('glance:cite', event => {
     setPanel(true);
+    setTab('answer');
     const target = document.getElementById(event.detail);
     if (target) { if (target.tagName === 'DETAILS') target.open = true; target.scrollIntoView({ block: 'nearest', behavior: 'smooth' }); }
   });
@@ -177,69 +177,209 @@ export function initApp({ globe = null, api = defaultApi } = {}) {
   // re-run it rather than silently spending another model call.
   function offerRerun() {
     $('rerun-language')?.remove();
-    if (!state.lastQuestion || state.busy || state.answerLanguage === getLanguage()) return;
+    if (!state.lastQuestion || !state.session || state.viewing || state.busy || state.answerLanguage === getLanguage()) return;
     const button = el('button', t('translation.rerun', { lang: languageName(getLanguage()) }), 'link-button rerun');
     button.type = 'button';
     button.id = 'rerun-language';
-    button.addEventListener('click', () => { question.value = state.lastQuestion; submit(); });
+    const text = state.lastQuestion;
+    const rerun = () => ask(text, 'rerun', rerun);
+    button.addEventListener('click', rerun);
     $('answer-body').prepend(button);
   }
 
-  function renderAnswer(data, question) {
-    glance.close();
-    state.topic = data.topic || null;
-    state.sources = [];
-    state.lookup = null;
-    state.lastQuestion = question;
-    state.answerLanguage = data.requested_language || getLanguage();
-    $('answer-heading').textContent = t('answer.heading');
-    document.body.dataset.hasAnswer = 'true';
-    // The server's own message is English; outside English the page's wording is used instead.
-    const english = getLanguage() === 'en';
+  // ---------------------------------------------------------------- one answer on screen
+  // #answer-body and #sources hold the newest turn. Earlier turns stack above it in #session-turns.
+  function paintLatest(data, text, { live }) {
+    const english = getLanguage() === 'en'; // the server's own message is English
+    resetAnswerUI();
     if (data.status === 'out_of_scope') {
       showMessage(t('scope.title'), (english && data.answer) || t('scope.default'));
-      showPlaces([]);
-      announce(t('scope.announce'));
-      return;
+      if (live) announce(t('scope.announce'));
+      return [];
     }
     if (data.status === 'insufficient_evidence') {
       showMessage(t('insufficient.title'),
         (english && typeof data.answer === 'string' && data.answer) || t('insufficient.default'));
+      if (text) $('answer-body').prepend(el('p', text, 'result-query'));
       $('answer-body').append(el('p', t('insufficient.hint'), 'state-message'));
-      appendRadarNote(data);
-      showPlaces([]);
-      announce(t('insufficient.announce'));
-      return;
+      if (live) { appendRadarNote(data); announce(t('insufficient.announce')); }
+      return [];
     }
-    if (!validClaims(data.claims)) throw new Error(t('answer.bad_citations'));
     const { lookup, list } = indexSources(data.sources, 'evidence');
-    state.lookup = lookup;
-    state.sources = list;
     const body = document.createDocumentFragment();
-    body.append(el('p', question, 'result-query'), renderClaims(data.claims, lookup));
+    body.append(el('p', text, 'result-query'), renderClaims(data.claims, lookup));
     $('answer-body').replaceChildren(body);
     appendLanguageNote(data);
-    appendRadarNote(data);
+    if (live) appendRadarNote(data);
     $('sources-section').hidden = false;
     $('sources').replaceChildren(list.length ? renderSources(list, data.claims)
       : el('p', t('answer.no_sources'), 'state-message'));
     $('source-count').textContent = tn('sources.count', list.length);
     lastCopy = copyableText(data.claims, lookup, list);
     $('copy-answer').hidden = false;
-    const places = cleanPlaces(data.locations);
-    showPlaces(places);
-    announce(t('answer.ready', { n: list.length }) + ' ' + tn('answer.ready_places', places.length));
-    if (graph) graph.highlight(list);
+    return list;
   }
+
+  function earlierTurn(turn, prefix) {
+    const article = el('article', '', 'turn');
+    article.append(el('p', turn.question || t('sessions.blocked_question'), 'result-query'));
+    const { data } = turn;
+    if (data.status === 'answered') {
+      const { lookup, list } = indexSources(data.sources, prefix);
+      article.append(renderClaims(data.claims, lookup));
+      if (list.length) article.append(el('h3', t('sources.heading'), 'section-label'), renderSources(list, data.claims));
+    } else {
+      article.append(el('p', t(data.status === 'out_of_scope' ? 'scope.title' : 'insufficient.title'), 'state-message'));
+    }
+    return article;
+  }
+
+  // Pins come from the newest turn that has any. Source ids restart every turn, so mixing turns
+  // would point a pin at another turn's source. Citations on a pin use that turn's anchors.
+  function showSessionPlaces(turns) {
+    const index = turns.findLastIndex(turn => turn.data.locations.length);
+    if (index < 0) { state.lookup = null; showPlaces([]); return; }
+    state.lookup = indexSources(turns[index].data.sources, index === turns.length - 1 ? 'evidence' : `turn-${index + 1}`).lookup;
+    showPlaces(turns[index].data.locations);
+  }
+
+  function paintSession(session, { live = false, text = null, data = null } = {}) {
+    const turns = session.turns, last = turns[turns.length - 1];
+    glance.close();
+    $('session-turns').replaceChildren(...turns.slice(0, -1).map((turn, i) => earlierTurn(turn, `turn-${i + 1}`)));
+    const list = paintLatest(data || last.data, text || last.question, { live }); // the stored turn has no Radar note
+    state.sources = list;
+    state.topic = turns[0].question || null; // a briefing is about the session's subject, not "show the map"
+    state.answerLanguage = last.data.requested_language || getLanguage();
+    showSessionPlaces(turns);
+    $('answer-heading').textContent = t('answer.heading');
+    document.body.dataset.hasAnswer = 'true';
+    if (graph) graph.highlight(list);
+    syncSessionUI();
+    return list;
+  }
+
+  function syncSessionUI() {
+    const readOnly = Boolean(state.viewing);
+    $('past-banner').hidden = !readOnly;
+    $('past-back').textContent = t(state.session ? 'sessions.back' : 'sessions.back_list');
+    $('followup-form').hidden = readOnly || !state.session;
+    setPlaceholder();
+    renderPast();
+    offerRerun();
+  }
+
+  // ---------------------------------------------------------------- past sessions
+  const pastSessions = () => loadSessions().filter(s => s.id !== state.session?.id);
+
+  function renderPast() {
+    const sessions = pastSessions();
+    $('clear-sessions').hidden = sessions.length === 0;
+    if (!sessions.length) { $('past-list').replaceChildren(el('p', t('sessions.empty'), 'state-message')); return; }
+    $('past-list').replaceChildren(...sessions.map(session => {
+      const button = el('button', '', 'past-item');
+      button.type = 'button';
+      button.setAttribute('aria-current', String(state.viewing === session.id));
+      const first = session.turns[0].question || t('sessions.blocked_question');
+      let when = '';
+      try { when = new Date(session.startedAt).toLocaleString(getLanguage(), { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }); } catch { /* unknown locale */ }
+      const meta = el('span', [when, tn('sessions.turns', session.turns.length)].filter(Boolean).join(' · '), 'past-meta');
+      button.append(el('span', first, 'past-question'), meta);
+      if (session.demo) meta.append(el('span', t('sessions.sample'), 'past-sample'));
+      button.addEventListener('click', () => openPast(session.id));
+      return button;
+    }));
+  }
+
+  function openPast(id) {
+    const session = loadSessions().find(s => s.id === id);
+    if (!session) { renderPast(); return; }
+    state.viewing = id;
+    paintSession(session);
+    setTab('answer');
+    $('answer-scroll').scrollTop = 0;
+  }
+
+  function clearPanel() {
+    glance.close();
+    state.lookup = null; state.sources = []; state.topic = null; state.lastQuestion = null;
+    resetAnswerUI();
+    $('session-turns').replaceChildren();
+    $('answer-body').replaceChildren();
+    $('sources').replaceChildren();
+    $('source-count').textContent = '';
+    $('sources-section').hidden = true;
+    showPlaces([]);
+    if (graph) graph.highlight([]);
+  }
+
+  // Leaving a past session returns to the live one, or to the list if there isn't one.
+  function closePast() {
+    state.viewing = null;
+    if (state.session) {
+      paintSession(state.session);
+    } else {
+      clearPanel();
+      delete document.body.dataset.hasAnswer;
+      syncSessionUI();
+      setTab('past');
+    }
+  }
+
+  function setTab(tab) {
+    state.tab = tab;
+    const past = tab === 'past';
+    $('panel-tabs').dataset.active = tab;
+    $('panel-panes').dataset.active = tab;
+    $('tab-answer').setAttribute('aria-selected', String(!past));
+    $('tab-past').setAttribute('aria-selected', String(past));
+    $('tab-answer').tabIndex = past ? -1 : 0;
+    $('tab-past').tabIndex = past ? 0 : -1;
+    $('pane-answer').inert = past;
+    $('pane-past').inert = !past;
+    $('copy-answer').classList.toggle('is-away', past);
+    if (past) renderPast();
+  }
+
+  $('tab-answer').addEventListener('click', () => setTab('answer'));
+  $('tab-past').addEventListener('click', () => setTab('past'));
+  $('panel-tabs').addEventListener('keydown', event => {
+    if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight') return;
+    event.preventDefault();
+    const next = state.tab === 'answer' ? 'past' : 'answer';
+    setTab(next);
+    $(next === 'past' ? 'tab-past' : 'tab-answer').focus();
+  });
+  $('past-back').addEventListener('click', closePast);
+  let clearArmed = false, clearTimer;
+  $('clear-sessions').addEventListener('click', () => {
+    clearTimeout(clearTimer);
+    if (!clearArmed) {
+      clearArmed = true;
+      $('clear-sessions').textContent = t('sessions.clear_confirm');
+      clearTimer = setTimeout(() => { clearArmed = false; $('clear-sessions').textContent = t('sessions.clear'); }, 4000);
+      return;
+    }
+    clearArmed = false;
+    $('clear-sessions').textContent = t('sessions.clear');
+    clearSessions(state.session?.id);
+    if (state.viewing) closePast();
+    renderPast();
+  });
 
   const form = $('ask-form'), question = $('question');
   // the long placeholder wraps and clips on phones
-  const setPlaceholder = () => { if (window.matchMedia(MOBILE).matches) question.placeholder = t('question.placeholder_short'); };
+  const setPlaceholder = () => {
+    if (state.session) question.placeholder = t('question.placeholder_new');
+    else question.placeholder = t(window.matchMedia(MOBILE).matches ? 'question.placeholder_short' : 'question.placeholder');
+  };
   setPlaceholder();
   function setBusy(busy) {
     state.busy = busy;
     $('ask-button').disabled = busy;
     question.readOnly = busy;
+    $('followup-send').disabled = busy;
+    $('followup-input').readOnly = busy;
     document.querySelectorAll('[data-question]').forEach(b => { b.disabled = busy; });
     $('ask-button-text').textContent = t(busy ? 'ask.busy' : 'ask.button');
     $('search-progress').hidden = !busy;
@@ -247,35 +387,85 @@ export function initApp({ globe = null, api = defaultApi } = {}) {
     document.body.dataset.state = busy ? 'searching' : 'idle';
   }
 
-  async function submit() {
-    if (state.busy) return;
+  // kind: 'new' starts a chat, 'followup' adds to this session, 'rerun' replaces its newest turn.
+  async function ask(text, kind, retry) {
+    if (state.busy) return false;
     if (state.view !== 'globe') setView('globe'); // answers and pins live on the globe view
-    const text = question.value.trim();
-    if (text.length < 3) {
-      question.setCustomValidity(t('question.too_short'));
-      question.reportValidity();
-      return;
+    const previous = state.session;
+    let earlier = previous?.turns || [];
+    if (kind === 'rerun') earlier = earlier.slice(0, -1);
+    if (kind === 'new') {
+      // The bottom box begins again. The old session is already saved; it now shows under Past sessions.
+      state.session = null;
+      earlier = [];
+      clearPanel();
     }
+    state.viewing = null;
     setBusy(true);
     resetAnswerUI();
     announce(t('search.announce'));
     setPanel(true);
+    setTab('answer');
+    $('past-banner').hidden = true;
+    $('followup-form').hidden = kind === 'new';
+    $('session-turns').replaceChildren(...earlier.map((turn, i) => earlierTurn(turn, `turn-${i + 1}`)));
+    $('sources-section').hidden = true;
     $('answer-body').replaceChildren(el('div', '', 'loader'), el('h3', t('search.loading_title'), 'state-title'),
       el('p', t('search.loading_text'), 'state-message'));
+    $('answer-body').scrollIntoView?.({ block: 'nearest' });
+    let ok = false;
     try {
-      renderAnswer(await api.ask(text, $('team').value || undefined, getLanguage()), text);
+      const history = kind === 'new' ? [] : historyOf({ turns: earlier });
+      const data = await api.ask(text, $('team').value || undefined, getLanguage(), history);
+      if (data.status === 'answered' && !validClaims(data.claims)) throw new Error(t('answer.bad_citations'));
+      const turn = makeTurn(data);
+      const session = state.session || newSession();
+      session.demo = session.demo || data.demo === true;
+      session.turns = [...earlier, turn];
+      state.session = session;
+      state.lastQuestion = text;
+      saveSession(session);
+      const list = paintSession(session, { live: true, data, text: data.status === 'out_of_scope' ? '' : text });
+      // The newest answer starts in view; earlier turns are a scroll away.
+      if (earlier.length) $('answer-scroll').scrollTop = $('answer-body').offsetTop - $('answer-scroll').offsetTop;
+      if (data.status === 'answered') {
+        announce(t('answer.ready', { n: list.length }) + ' ' + tn('answer.ready_places', turn.data.locations.length));
+      }
+      ok = true;
     } catch (error) {
       resetAnswerUI();
       showMessage(t('search.failed_title'), error.message || t('search.failed_default'), 'error-title');
-      const retry = el('button', t('retry'), 'link-button');
-      retry.type = 'button';
-      retry.addEventListener('click', submit);
-      $('answer-body').append(retry);
+      if (kind !== 'new') $('answer-body').prepend(el('p', text, 'result-query'));
+      if (!earlier.length && !state.session) showPlaces([]); // nothing from an older answer may linger
+      const button = el('button', t('retry'), 'link-button');
+      button.type = 'button';
+      button.addEventListener('click', retry);
+      $('answer-body').append(button);
       announce(t('search.failed_announce'));
+      syncSessionUI();
     } finally {
       setBusy(false);
     }
+    return ok;
   }
+
+  async function submit() {
+    const text = question.value.trim();
+    if (!state.busy && text.length < 3) {
+      question.setCustomValidity(t('question.too_short'));
+      question.reportValidity();
+      return;
+    }
+    if (await ask(text, 'new', submit)) { question.value = ''; question.dispatchEvent(new Event('input')); }
+  }
+
+  async function followUp() {
+    const input = $('followup-input'), text = input.value.trim();
+    if (text.length < 3 || !state.session) return;
+    if (await ask(text, 'followup', followUp)) input.value = '';
+    input.focus({ preventScroll: true });
+  }
+  $('followup-form').addEventListener('submit', event => { event.preventDefault(); followUp(); });
 
   form.addEventListener('submit', event => { event.preventDefault(); submit(); });
   question.addEventListener('input', () => {
@@ -392,12 +582,13 @@ export function initApp({ globe = null, api = defaultApi } = {}) {
     $('copy-label').textContent = t('copy');
     setPlaceholder();
     syncRotate();
-    offerRerun();
+    syncSessionUI();
     checkStatus();
   });
 
   setPanel(false);
+  syncSessionUI();
   glanceEl.inert = true;
   checkStatus();
-  return { state, selectPlace, setView, submit, glance, pins, layout, ready: () => graphLoaded };
+  return { state, selectPlace, setView, submit, followUp, openPast, setTab, glance, pins, layout, ready: () => graphLoaded };
 }
