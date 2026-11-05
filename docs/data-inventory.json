@@ -1,0 +1,18 @@
+{
+ "intro": "AskWRI has no accounts and does not know who you are. This page lists what the system keeps, where, and for how long.",
+ "items": [
+  {"data": "The text of your question (Demand Radar log)", "where": "Server database data/radar.db", "kept": "Every question that is not blocked by the safety filter, whether or not it was answered. Stored with the time, guessed language, an optional team label, whether it was answered, the search score and the cited titles. Emails and phone numbers are replaced by [email] and [phone]. Up to 1,000 characters. Deleted after RADAR_RETENTION_DAYS (default 90); cleanup runs when a new question is logged.", "status": "verified (globe app)"},
+  {"data": "Questions blocked by the safety filter", "where": "Never logged", "kept": "Not kept, because a blocked question may contain a card number or a secret", "status": "verified"},
+  {"data": "Email addresses, phone numbers and IP addresses typed into a question", "where": "Masked by the safety filter before search and the AI see them, for example {EMAIL}", "kept": "Masked version only", "status": "verified (globe app)"},
+  {"data": "Card numbers, SSNs, passwords, AWS keys typed into a question", "where": "Request is blocked", "kept": "Not processed", "status": "verified"},
+  {"data": "Names and place names typed into a question", "where": "NOT masked, because masking them would break research questions", "kept": "Stored with the question text above", "status": "verified"},
+  {"data": "The optional team label you type", "where": "Same database", "kept": "Stored exactly as typed, up to 60 characters. Do not put a personal name here.", "status": "verified"},
+  {"data": "What your questions reveal about your research", "where": "Same database", "kept": "Do not include confidential project details in a question", "status": "verified"},
+  {"data": "Your question while it is being answered", "where": "Amazon Bedrock (safety check and AI model)", "kept": "AskWRI code does not store model prompts. Bedrock model-call logging status: to be confirmed in the production account", "status": "to be confirmed"},
+  {"data": "Your IP address", "where": "Web server console log (the server prints the client address per request)", "kept": "Retention depends on how the server is deployed", "status": "to be confirmed"},
+  {"data": "Your language choice", "where": "Your browser (localStorage), a language code only", "kept": "Until you clear site data", "status": "verified in the translation branch; applies once it is merged"},
+  {"data": "Accounts, user IDs, device IDs", "where": "Not collected", "kept": "n/a", "status": "verified"},
+  {"data": "The agents app (api/, src/askwri)", "where": "Same Radar database; raw prompt scrubbed only of email and phone", "kept": "Whether it uses the safety filter: to be confirmed", "status": "to be confirmed"}
+ ],
+ "controls": ["Safety filter masks email, phone and IP before search (globe app)", "Secrets and card numbers are blocked and never logged", "Fails closed if the safety check cannot run"]
+}
