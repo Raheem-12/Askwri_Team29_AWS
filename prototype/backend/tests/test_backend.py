@@ -111,6 +111,17 @@ def test_city_country_names_from_the_model_resolve_to_the_most_specific_place():
     assert geo.resolve_in_quote('Nairobi, Kenya', 'In Jakarta, Indonesia, floods rise.') is None
 
 
+def test_states_and_provinces_resolve_but_vague_names_do_not():
+    entry = geo.resolve_in_quote('Rajasthan', 'Solar pumps in Rajasthan are growing.')
+    assert entry and entry['kind'] == 'state' and entry['country'] == 'India'
+    assert 24 < entry['lat'] < 30 and 69 < entry['lon'] < 79
+    assert geo.pin(entry)['precision'] == 'approximate'
+    assert geo.lookup('Brazil')['kind'] == 'country'  # countries still win over same-named provinces
+    assert geo.lookup('Central') is None and geo.lookup('Northern') is None
+    assert geo.resolve_in_quote('Punjab', 'Farmers in Punjab, India use groundwater.')['country'] == 'India'
+    assert geo.resolve_in_quote('Punjab', 'Farmers in Punjab, Pakistan use groundwater.')['country'] == 'Pakistan'
+
+
 def test_compound_location_name_makes_a_pin_end_to_end():
     quote = 'In Jakarta, Indonesia, flooding strains drainage'
     result = backend.validate_answer(payload(locations=[
@@ -322,6 +333,22 @@ def test_blocked_questions_are_never_logged(guard_env, monkeypatch):
     monkeypatch.setattr(backend, 'aws_clients', lambda region: (None, guard))
     body = TestClient(backend.app).post('/api/ask', json={'question': 'My card is 4111 1111 1111 1111'}).json()
     assert body['status'] == 'out_of_scope' and 'radar' not in body and radar_rows() == []
+
+
+def test_glance_summary_searches_by_place_name_and_follow_ups_by_question(monkeypatch):
+    monkeypatch.setenv('DEMO_MODE', 'true')
+    seen = []
+
+    class Retriever:
+        def retrieve(self, **kwargs):
+            seen.append(kwargs['retrievalQuery']['text'])
+            return {'retrievalResults': []}
+
+    monkeypatch.setattr(backend.demo, 'DemoRetriever', Retriever)
+    client = TestClient(backend.app)
+    client.post('/api/glance', json={'place': 'Rajasthan'})
+    client.post('/api/glance', json={'place': 'Rajasthan', 'question': 'What are the challenges?'})
+    assert seen == ['Rajasthan', 'Rajasthan: What are the challenges?']
 
 
 def test_only_typed_glance_questions_count_as_demand(monkeypatch):

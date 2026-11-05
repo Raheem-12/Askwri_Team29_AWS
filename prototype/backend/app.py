@@ -106,9 +106,10 @@ Return ONLY JSON: {"answerable":true,"claims":[{"text":"A short factual claim",
 "locations":[{"name":"Jakarta","issue":"Short phrase for the issue there",
 "source_id":"S1","quote":"Exact passage text that contains the place name"}]}.
 Maximum 4 short claims, preferably 1 or 2. "locations" lists up to 6 places (countries,
-cities or regions) that a passage explicitly names as where an issue occurs. The place
-name must appear inside the quote, and "name" is only the place itself ("Jakarta", not
-"Jakarta, Indonesia"; use one entry per place). Never infer a place that no quote names. Use [] if none.'''
+states, cities or regions) named in the passages you cite as a place the findings concern.
+Include every such place: the map depends on this. The place name must appear inside the
+quote, and "name" is only the place itself ("Jakarta", not "Jakarta, Indonesia"; use one entry
+per place). Never infer a place that no quote names. Use [] only if no cited passage names one.'''
 
 SYSTEM_GLANCE = '''You are AskWRI. Summarise what WRI research says about one place. ''' + RULES + '''
 Return ONLY JSON: {"answerable":true,"claims":[{"text":"A short factual claim",
@@ -336,14 +337,15 @@ def invalid_response():
 
 
 def answer_question(question, retriever, generator, kb_id, model_id, guard=None,
-                    mode='ask', system=SYSTEM_ASK, extra=None, count=6):
-    """Shared by /api/ask and /api/glance. `question` is already scoped by the caller."""
+                    mode='ask', system=SYSTEM_ASK, extra=None, count=6, search_query=None):
+    """Shared by /api/ask and /api/glance. `question` is already scoped by the caller.
+    `search_query` overrides what is sent to retrieval; it must not contain user text."""
     try:
         question = guardrails.check_input(guard, question) if guard else question
     except guardrails.Blocked as blocked:
         return {'status': 'out_of_scope', 'answer': str(blocked), 'claims': [], 'sources': [],
                 'locations': [], 'topic': None, 'demo': demo_mode()}
-    sources, top_score = retrieve_sources(retriever, kb_id, question, count)
+    sources, top_score = retrieve_sources(retriever, kb_id, search_query or question, count)
     done = {'topic': question, 'demo': demo_mode(), '_top_score': top_score}
     if not sources:
         return {**validate_answer({'answerable': False, 'claims': []}, []), **done}
@@ -443,11 +445,14 @@ def ask(request: Question):
 def glance(request: GlanceRequest):
     place = known_place(request.place)
     ask_text = f'{place}: {request.question.strip()}' if request.question else \
-        f'What are the main issues WRI research describes in {place}?'
+        f'What are the main issues described in {place}?'
 
     def run(retriever, generator, guard, kb, model):
         result = answer_question(ask_text, retriever, generator, kb, model, guard, mode='glance',
-                                 system=SYSTEM_GLANCE, extra={'place': place}, count=6)
+                                 system=SYSTEM_GLANCE, extra={'place': place}, count=6,
+                                 # A plain place name finds passages about it. Longer wording
+                                 # ("WRI research...") drags in WRI's own administrative files.
+                                 search_query=None if request.question else place)
         if request.question:  # typed by a person; automatic summaries are not demand
             result = log_to_radar(result, team=request.team, endpoint='glance')
         else:

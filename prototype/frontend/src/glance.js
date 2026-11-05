@@ -1,7 +1,7 @@
 import { $, el, announce } from './util.js';
 import { indexSources, validClaims, renderClaims, renderSources } from './render.js';
 
-const KIND = { country: 'Country', city: 'City', region: 'Region · approximate area' };
+const KIND = { country: 'Country', state: 'State or province · approximate area', city: 'City', region: 'Region · approximate area' };
 let uid = 0;
 
 function skeleton() {

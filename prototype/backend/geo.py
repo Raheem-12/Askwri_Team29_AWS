@@ -59,12 +59,18 @@ def resolve_in_quote(name, quote):
         matching = [e for e in index.get(candidate.casefold(), [])
                     if any(_alias_in_text(alias, quote) for alias in e.get('aliases', []))]
         if matching:
-            return max(matching, key=lambda e: e.get('pop', 0))
+            return max(matching, key=lambda e: (_country_named(e, name + ' ' + quote), e.get('pop', 0)))
     return None
+
+
+def _country_named(entry, text):
+    """True if the entry's country appears in the text: tells Punjab, India from Punjab, Pakistan."""
+    country = lookup(entry.get('country')) if entry.get('country') else None
+    return bool(country) and any(_alias_in_text(alias, text) for alias in country.get('aliases', []))
 
 
 def pin(entry):
     return {'id': slug(entry['name'] + '-' + entry['kind']), 'name': entry['name'],
             'kind': entry['kind'], 'country': entry.get('country'),
             'lat': entry['lat'], 'lon': entry['lon'],
-            'precision': 'approximate' if entry['kind'] == 'region' else 'exact'}
+            'precision': 'approximate' if entry['kind'] in ('region', 'state') else 'exact'}

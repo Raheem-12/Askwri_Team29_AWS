@@ -21,3 +21,14 @@ dist/
 data/radar.db
 .pytest_cache/
 logs/
+
+# Local research files (too large for git)
+WRI Data/
+
+# No need to display AskWRI's technincal docs and our expectation notes, and main Claude Code bulk done
+#  by Ali Aamir
+CLAUDE.md
+the-expectation.md
+AskWRI-technical-document.md
+AskWRI-vision-document.md
+

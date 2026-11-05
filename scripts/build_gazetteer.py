@@ -50,6 +50,11 @@ REGIONS = {
 }
 
 
+VAGUE_ADMIN1 = {"central", "north", "south", "east", "west", "northern", "southern", "eastern", "western",
+                "centre", "center", "capital", "coast", "coastal", "islands", "interior", "lakes", "upper", "lower",
+                "north east", "north west", "south east", "south west", "northeast", "northwest", "southeast", "southwest"}
+
+
 def fetch(name):
     with urllib.request.urlopen(BASE + name, timeout=60) as response:
         return json.load(response)
@@ -90,6 +95,18 @@ def build():
                         "lat": round(lat, 2), "lon": round(lon, 2), "pop": pop,
                         "aliases": clean(p["name"], p.get("nameascii"))})
 
+    # States and provinces: research names these constantly (Rajasthan, Sao Paulo, Java...).
+    # Direction-style names ("Central", "Northern") are skipped; they would match ordinary prose.
+    for feature in fetch("ne_10m_admin_1_states_provinces.geojson")["features"]:
+        p = feature["properties"]
+        name, lat, lon = p.get("name"), p.get("latitude"), p.get("longitude")
+        if not name or lat is None or lon is None or len(name) < 4 or name.casefold() in VAGUE_ADMIN1:
+            continue
+        entries.append({"name": name, "kind": "state", "country": p.get("admin"),
+                        "lat": round(lat, 2), "lon": round(lon, 2), "pop": 0,
+                        "aliases": [a for a in clean(name, p.get("name_en"), p.get("gn_name"))
+                                    if a.casefold() not in VAGUE_ADMIN1 and len(a) >= 4]})
+
     for name, (lat, lon) in REGIONS.items():
         entries.append({"name": name, "kind": "region", "lat": lat, "lon": lon, "pop": 0,
                         "aliases": [name]})
@@ -99,7 +116,7 @@ def build():
 def main():
     entries = build()
     OUT.write_text(json.dumps(entries, ensure_ascii=False, separators=(",", ":")) + "\n", encoding="utf-8")
-    kinds = {k: sum(e["kind"] == k for e in entries) for k in ("country", "city", "region")}
+    kinds = {k: sum(e["kind"] == k for e in entries) for k in ("country", "state", "city", "region")}
     print(f"wrote {OUT} ({OUT.stat().st_size // 1024} KB): {kinds}")
 
 
