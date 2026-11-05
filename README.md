@@ -4,6 +4,26 @@ AWS Breaking Barriers US 2026, World Resources Institute.
 
 AskWRI is a research assistant over WRI publications. It quotes a source passage for every claim, checks each quote word for word against that passage, pins the places the evidence names on a 3D globe, and declines when the sources don't support an answer.
 
+## The problem
+
+A policy analyst, journalist or program officer needs an answer from WRI's research, and WRI has published hundreds of long reports. Searching them by keyword returns documents, not answers. A general chatbot returns answers, but it can invent facts and attach a real-sounding citation to them.
+
+AskWRI answers from WRI publications only. Every claim comes with a quote, and the quote is checked word for word against the source passage. When the sources don't support an answer, it declines. The places the evidence names are pinned on a 3D globe.
+
+## Results
+
+Measured on the real Bedrock Knowledge Base (10 WRI reports), 17 questions (12 answerable, 5 unanswerable), 2 runs each:
+
+| | Before | After tuning |
+|---|---|---|
+| Answerable questions wrongly refused | 38% | 8% |
+| Unanswerable questions correctly declined | 100% | 100% |
+| Expected source found (recall) | 58% | 88% |
+| Cited sources that were expected (precision) | 100% | 100% |
+| Same outcome in both runs | 16/17 | 17/17 |
+
+What changed: retrieve 12 passages instead of 6, tolerant quote matching so PDF noise stops causing false refusals, drop one bad claim instead of refusing the whole answer, and one retry with feedback. The one known remaining miss is question a08. Run `python eval/run_eval_prototype.py` to reproduce. The eval set is small and the corpus is a 10-report subset of the 235 listed in the manifest.
+
 > Status: the globe app in `prototype/` works end to end on real data, running locally. It isn't deployed yet. The agents app in `src/` + `api/` doesn't work against the current Managed Knowledge Base yet. The original design below is kept for reference, and most of it isn't built.
 
 ## Architecture
