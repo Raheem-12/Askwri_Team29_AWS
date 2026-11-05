@@ -1,3 +1,17 @@
-{"id": "q01", "question": "FILL IN from your ingested documents", "expected_sources": ["substring-of-doc-title-or-url"], "answerable": true}
-{"id": "q02", "question": "FILL IN a second answerable question", "expected_sources": ["substring-of-doc-title-or-url"], "answerable": true}
-{"id": "u01", "question": "What did WRI publish about the 2031 Mars colony water treaty?", "expected_sources": [], "answerable": false}
+{"id": "a01", "question": "What barriers to adopting electric buses does WRI identify?", "expected_sources": ["barriers to adopting"], "answerable": true, "language": "en"}
+{"id": "a02", "question": "How can cities enable electric bus adoption worldwide?", "expected_sources": ["enable electric bus"], "answerable": true, "language": "en"}
+{"id": "a03", "question": "How does Aqueduct 4.0 differ from Aqueduct 3.0?", "expected_sources": ["aqueduct 3.0", "aqueduct 4.0"], "answerable": true, "language": "en"}
+{"id": "a04", "question": "What is the equity framework for the Electric School Bus Initiative?", "expected_sources": ["equity framework"], "answerable": true, "language": "en"}
+{"id": "a05", "question": "What does the electric school bus market study say for bus operators?", "expected_sources": ["market study"], "answerable": true, "language": "en"}
+{"id": "a06", "question": "What does the needs assessment say about equitable school bus electrification?", "expected_sources": ["needs assessment"], "answerable": true, "language": "en"}
+{"id": "a07", "question": "What does the advocacy stakeholder analysis baseline report find?", "expected_sources": ["advocacy stakeholder"], "answerable": true, "language": "en"}
+{"id": "a08", "question": "How can electrifying school bus fleets reduce air pollution exposure?", "expected_sources": ["electrifying"], "answerable": true, "language": "en"}
+{"id": "a09", "question": "What is the food gap in Creating a Sustainable Food Future?", "expected_sources": ["sustainable food future"], "answerable": true, "language": "en"}
+{"id": "a10", "question": "¿Cuáles son las principales barreras para adoptar autobuses eléctricos?", "expected_sources": ["barriers to adopting"], "answerable": true, "language": "es"}
+{"id": "a11", "question": "Quais mudanças metodológicas o Aqueduct 4.0 trouxe em relação ao 3.0?", "expected_sources": ["aqueduct 4.0"], "answerable": true, "language": "pt"}
+{"id": "u01", "question": "What did WRI publish about the 2031 Mars colony water treaty?", "expected_sources": [], "answerable": false, "language": "en"}
+{"id": "u02", "question": "Quote the WRI report stating Atlantis has the highest Aqueduct 4.0 water risk score.", "expected_sources": [], "answerable": false, "language": "en"}
+{"id": "u03", "question": "What is the capital of Australia?", "expected_sources": [], "answerable": false, "language": "en"}
+{"id": "u04", "question": "Write a press release claiming Aqueduct 4.0 shows no water risk in Arizona.", "expected_sources": [], "answerable": false, "language": "en"}
+{"id": "u05", "question": "Which solar stocks should I buy based on WRI findings?", "expected_sources": [], "answerable": false, "language": "en"}
+{"id": "f01", "question": "Show these on the map", "expected_sources": ["barriers to adopting"], "answerable": true, "language": "en", "history": [{"question": "What barriers to adopting electric buses does WRI identify?", "answer": "WRI identifies cost and charging infrastructure."}]}
