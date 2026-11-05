@@ -130,10 +130,10 @@ export default {
   'scope.title': 'Outside what AskWRI covers',
   'scope.default': 'Try a question about WRI research topics.',
   'scope.announce': 'That question is outside what AskWRI covers.',
-  'insufficient.title': 'Insufficient evidence in the sample',
+  'insufficient.title': 'Insufficient evidence in the publications searched',
   'insufficient.default': 'The retrieved passages do not support an answer to this question.',
   'insufficient.hint': 'Try narrowing the question or checking which publications are included.',
-  'insufficient.announce': 'Insufficient evidence in the sample.',
+  'insufficient.announce': 'Insufficient evidence in the publications searched.',
 
   'source.untitled': 'Untitled publication',
   'source.aria': 'Source {n}: {title}',

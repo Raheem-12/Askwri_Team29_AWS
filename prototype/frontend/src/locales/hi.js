@@ -130,10 +130,10 @@ export default {
   'scope.title': 'AskWRI के दायरे से बाहर',
   'scope.default': 'WRI के शोध विषयों से जुड़ा कोई सवाल पूछकर देखें।',
   'scope.announce': 'यह सवाल AskWRI के दायरे से बाहर है।',
-  'insufficient.title': 'नमूने में पर्याप्त प्रमाण नहीं',
+  'insufficient.title': 'खोजे गए प्रकाशनों में पर्याप्त प्रमाण नहीं',
   'insufficient.default': 'मिले हुए अंश इस सवाल के उत्तर का समर्थन नहीं करते।',
   'insufficient.hint': 'सवाल को सीमित करके देखें या जाँचें कि कौन-से प्रकाशन शामिल हैं।',
-  'insufficient.announce': 'नमूने में पर्याप्त प्रमाण नहीं।',
+  'insufficient.announce': 'खोजे गए प्रकाशनों में पर्याप्त प्रमाण नहीं।',
 
   'source.untitled': 'बिना शीर्षक का प्रकाशन',
   'source.aria': 'स्रोत {n}: {title}',

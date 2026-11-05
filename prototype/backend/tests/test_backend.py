@@ -600,7 +600,8 @@ def test_quote_copied_from_the_conversation_is_not_evidence():
     fake = payload()
     fake['claims'][0]['evidence'][0]['quote'] = invented
     history = [backend.Turn(question='Q?', answer=invented)]
-    assert ask(Replies(fake), 'Tell me more about that', history=history)['status'] == 'insufficient_evidence'
+    # the first fabricated reply is retried once; the retry is held to the same rule
+    assert ask(Replies(fake, fake), 'Tell me more about that', history=history)['status'] == 'insufficient_evidence'
 
 
 def test_history_is_masked_before_search_and_model(guard_env):

@@ -38,10 +38,11 @@ import hardening  # noqa: E402
 
 sys.path.insert(0, str(REPO / 'security'))  # pure-code input checks, no AWS calls
 import precheck  # noqa: E402
+import quotes  # noqa: E402
 sys.path.insert(0, str(REPO / 'src'))  # Demand Radar lives with the agents app; it needs only the stdlib
 from askwri import radar  # noqa: E402
 
-REFUSAL = 'Insufficient evidence in the sample to answer this question.'
+REFUSAL = 'Insufficient evidence in the WRI publications searched to answer this question.'
 DIST = ROOT.parent / 'frontend' / 'dist'
 MAX_PINS = 8
 # No /docs or /openapi.json: a public API map helps attackers and nothing here uses it.
@@ -223,16 +224,37 @@ def evidence_sources(results):
     return sources
 
 
-def _verified(claims, by_id):
-    """Source ids used if every quote is verbatim in its passage, else None."""
-    used = set()
+def quote_mode():
+    """'drop' (default): a claim whose quote fails is removed and the rest are kept.
+    'strict': any failing quote refuses the whole answer (the original behaviour)."""
+    return 'strict' if env('QUOTE_MODE').lower() == 'strict' else 'drop'
+
+
+def verify_claims(claims, by_id):
+    """(kept claims, source ids used, number dropped).
+
+    A claim is kept only if EVERY quote it cites is found in its passage (see quotes.locate:
+    same words, same order, same case; only whitespace, hyphenation and quote style are ignored).
+    Each kept quote is replaced by the passage's own text, so readers always see the document's
+    wording. A claim with any unverifiable quote is dropped whole, never half-kept.
+    """
+    kept, used, dropped = [], set(), 0
     for claim in claims:
+        fixed = []
         for ref in claim.evidence:
             source = by_id.get(ref.source_id)
-            if not source or normalize(ref.quote) not in normalize(source['passage']):
-                return None  # Reject the entire answer, not just one invalid reference.
-            used.add(ref.source_id)
-    return used
+            exact = quotes.locate(ref.quote, source['passage']) if source else None
+            if exact is None:
+                break
+            fixed.append(ref.model_copy(update={'quote': exact}))
+        else:
+            kept.append(claim.model_copy(update={'evidence': fixed}))
+            used |= {r.source_id for r in fixed}
+            continue
+        dropped += 1
+    if dropped and quote_mode() == 'strict':
+        return [], set(), dropped
+    return kept, used, dropped
 
 
 def build_places(raw_locations, by_id):
@@ -257,44 +279,49 @@ def build_places(raw_locations, by_id):
     return list(places.values())[:MAX_PINS]
 
 
-def refusal(extra=None):
+def refusal(reason='model_unanswerable', extra=None):
+    """`refusal_reason` says WHICH layer declined: no_sources | model_unanswerable | model_declined |
+    quote_mismatch | grounding. It is a fixed label (never text), so it is safe to log and return."""
     return {'status': 'insufficient_evidence', 'answer': REFUSAL, 'claims': [], 'sources': [],
-            'locations': [], **(extra or {})}
+            'locations': [], 'refusal_reason': reason, **(extra or {})}
 
 
 def validate_answer(payload, sources):
     # A refusal needs no schema check: it adds nothing to verify, and the model sometimes adds
     # a key such as "reason" to one. Only a real refusal gets here; other replies are validated.
     if isinstance(payload, dict) and payload.get('answerable') is False:
-        return refusal()
+        return refusal('model_declined' if payload.get('_declined') else 'model_unanswerable')
     payload = dict(payload) if isinstance(payload, dict) else payload
     raw_locations = payload.pop('locations', []) if isinstance(payload, dict) else []
     generated = Generation.model_validate(payload)
     if not generated.answerable or not generated.claims:
-        return refusal()
+        return refusal('model_unanswerable')
     by_id = {s['id']: s for s in sources}
-    used = _verified(generated.claims, by_id)
-    if used is None:
-        return refusal()
+    kept, used, dropped = verify_claims(generated.claims, by_id)
+    if not kept:
+        return refusal('quote_mismatch')
     places = build_places(raw_locations, by_id)
     used |= {issue['source_id'] for place in places for issue in place['issues']}
-    return {'status': 'answered', 'answer': ' '.join(c.text for c in generated.claims),
-            'claims': [c.model_dump() for c in generated.claims],
-            'sources': [s for s in sources if s['id'] in used], 'locations': places}
+    return {'status': 'answered', 'answer': ' '.join(c.text for c in kept),
+            'claims': [c.model_dump() for c in kept],
+            'sources': [s for s in sources if s['id'] in used], 'locations': places,
+            'dropped_claims': dropped}
 
 
 def validate_briefing(payload, sources):
     if isinstance(payload, dict) and payload.get('answerable') is False:
         return None
     generated = BriefingGeneration.model_validate(payload)
-    claims = generated.overview + generated.key_findings
-    if not generated.answerable or not claims:
+    if not generated.answerable or not (generated.overview + generated.key_findings):
         return None
-    used = _verified(claims, {s['id']: s for s in sources})
-    if used is None:
+    by_id = {s['id']: s for s in sources}
+    overview, used_a, _ = verify_claims(generated.overview, by_id)
+    findings, used_b, _ = verify_claims(generated.key_findings, by_id)
+    if not (overview + findings):
         return None
-    return {'sections': [{'heading': 'Overview', 'claims': [c.model_dump() for c in generated.overview]},
-                         {'heading': 'Key findings', 'claims': [c.model_dump() for c in generated.key_findings]}],
+    used = used_a | used_b
+    return {'sections': [{'heading': 'Overview', 'claims': [c.model_dump() for c in overview]},
+                         {'heading': 'Key findings', 'claims': [c.model_dump() for c in findings]}],
             'sources': [s for s in sources if s['id'] in used]}
 
 
@@ -399,7 +426,7 @@ def generate(generator, model_id, mode, system, payload, max_tokens):
         # The model's own safety system declined. That is a refusal, not a broken reply: retrying
         # spends tokens on the same answer, and a 502 would tell the person to try again.
         log_invalid(mode, 'model_declined', stop='content_filtered', chars=len(raw))
-        return {'answerable': False}
+        return {'answerable': False, '_declined': True}
     try:
         return parse_model_json(raw)
     except ValueError:
@@ -425,17 +452,28 @@ def error_fields(error):
     return sorted({'.'.join(re.sub(r'\W', '', str(p))[:30] for p in e['loc']) for e in error.errors()})[:8]
 
 
+RETRY_NOTE = ('Your previous reply was rejected because at least one "quote" was not found in its passage. '
+              'Copy each quote exactly as written in the passage, character for character, and choose '
+              'the shortest sentence that supports the claim. Do not paraphrase inside a quote.')
+
+
 def generate_checked(generator, model_id, mode, system, body, max_tokens, check):
-    """Model reply passed through `check`. One retry: the failure is rare and random, and nothing
-    is lost by asking again. Every verification rule still applies to the second reply."""
+    """Model reply passed through `check`. Two attempts, because failures are rare and random.
+    Attempt 2 happens after an invalid reply, or after every quote failed verification (the second
+    time the model is told what went wrong). Every verification rule still applies to attempt 2."""
     for attempt in (1, 2):
         try:
             payload = generate(generator, model_id, mode, system, body, max_tokens)
             try:
-                return check(payload)
+                result = check(payload)
             except (ValidationError, TypeError, AttributeError) as error:
                 log_invalid(mode, 'schema', fields=error_fields(error))
                 raise invalid_response()
+            if attempt == 1 and isinstance(result, dict) and result.get('refusal_reason') == 'quote_mismatch':
+                log_invalid(mode, 'quote_mismatch_retry')
+                body = {**body, 'correction': RETRY_NOTE}
+                continue
+            return result
         except HTTPException:
             if attempt == 2:
                 raise
@@ -489,13 +527,16 @@ def answer_question(question, retriever, generator, kb_id, model_id, guard=None,
     sources, top_score = retrieve_sources(retriever, kb_id, search_query or question, count)
     done = {'topic': question, 'demo': demo_mode(), '_top_score': top_score, **language_fields(language)}
     if not sources:
-        return {**validate_answer({'answerable': False, 'claims': []}, []), **done}
+        return {**refusal('no_sources'), **done}
     result = generate_checked(generator, model_id, mode, with_language(system, language),
                               {'question': question, 'passages': sources, **extra}, ANSWER_TOKENS,
                               lambda payload: validate_answer(payload, sources))
     if guard and result['status'] == 'answered' and \
             not guardrails.check_output(guard, result['answer'], question, [s['passage'] for s in result['sources']]):
-        result = refusal()
+        result = refusal('grounding')
+    if result['status'] == 'insufficient_evidence':
+        logger.info('refusal: mode=%s reason=%s top_score=%s sources=%s', mode, result.get('refusal_reason'),
+                    top_score, len(sources))
     return {**result, **done}
 
 

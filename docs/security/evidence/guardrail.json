@@ -199,5 +199,5 @@
     "statusReasons": [],
     "failureRecommendations": [],
     "blockedInputMessaging": "AskWRI answers questions about WRI research on cities, climate, energy, food, forests, freshwater and the ocean. Try rephrasing your question.",
-    "blockedOutputsMessaging": "Insufficient evidence in the sample to answer this question."
+    "blockedOutputsMessaging": "Insufficient evidence in the WRI publications searched to answer this question."
 }

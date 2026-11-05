@@ -130,10 +130,10 @@ export default {
   'scope.title': 'Fora do que o AskWRI cobre',
   'scope.default': 'Tente uma pergunta sobre temas de pesquisa do WRI.',
   'scope.announce': 'Essa pergunta está fora do que o AskWRI cobre.',
-  'insufficient.title': 'Evidências insuficientes na amostra',
+  'insufficient.title': 'Evidências insuficientes nas publicações consultadas',
   'insufficient.default': 'Os trechos recuperados não sustentam uma resposta a esta pergunta.',
   'insufficient.hint': 'Tente restringir a pergunta ou verificar quais publicações estão incluídas.',
-  'insufficient.announce': 'Evidências insuficientes na amostra.',
+  'insufficient.announce': 'Evidências insuficientes nas publicações consultadas.',
 
   'source.untitled': 'Publicação sem título',
   'source.aria': 'Fonte {n}: {title}',

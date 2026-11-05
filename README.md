@@ -38,7 +38,7 @@ flowchart TD
 
 1. The input guardrail checks the question and masks personal details. A blocked question stops here and is never logged.
 2. The Knowledge Base retrieves passages, and Sonnet 5.5 writes claims, quotes and places as JSON using only those passages. An invalid reply is retried once, then returns a 502.
-3. Every quote must appear word for word in its passage, or the whole answer becomes a refusal. A pin needs a verified quote that names the place, plus a gazetteer match. A bad place drops only that pin.
+3. Every quote must appear word for word in its passage (whitespace, hyphenation and quote style are ignored, nothing else). A claim with a quote that doesn't match is dropped and the rest are kept; if none survive, the model is asked once more, then the answer becomes a refusal. Set `QUOTE_MODE=strict` to refuse the whole answer on any mismatch. A pin needs a verified quote that names the place, plus a gazetteer match. A bad place drops only that pin.
 4. The output guardrail checks the claims are grounded in the cited passages. Any intervention becomes a refusal.
 5. New questions, answered or refused, are logged to Demand Radar with no names.
 
@@ -178,7 +178,7 @@ Follow [`docs/guardrails-setup.md`](docs/guardrails-setup.md) to create the Bedr
 - **Disguised input:** `security/precheck.py` rejects base64, hex, ROT13 and reversed instructions before any AWS call.
 - **Guardrail:** input check, then an output check with grounding at 0.7. If it can't run, the request stops.
 - **Model:** answers only from the supplied passages. If its own safety filter declines, that's a refusal.
-- **Verification:** every quote must match its passage word for word.
+- **Verification:** every quote must match its passage word for word; each refusal carries a `refusal_reason` (no_sources, model_unanswerable, model_declined, quote_mismatch, grounding).
 
 **Before hosting this anywhere public:** add sign-in, because `/radar` and `/api/radar` are open to anyone who can reach the server, and put HTTPS and an edge rate limit in front of it. The rate limit here is per process, and it sees a load balancer as one client unless the server is set up to trust forwarded addresses. `api/server.py` (the agents app) has none of these web protections, so keep it local.
 

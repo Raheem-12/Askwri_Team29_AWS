@@ -130,10 +130,10 @@ export default {
   'scope.title': 'Hors du champ d’AskWRI',
   'scope.default': 'Essayez une question sur les thèmes de recherche du WRI.',
   'scope.announce': 'Cette question sort du champ d’AskWRI.',
-  'insufficient.title': 'Preuves insuffisantes dans l’échantillon',
+  'insufficient.title': 'Preuves insuffisantes dans les publications consultées',
   'insufficient.default': 'Les passages trouvés ne permettent pas de répondre à cette question.',
   'insufficient.hint': 'Essayez de préciser la question ou vérifiez quelles publications sont incluses.',
-  'insufficient.announce': 'Preuves insuffisantes dans l’échantillon.',
+  'insufficient.announce': 'Preuves insuffisantes dans les publications consultées.',
 
   'source.untitled': 'Publication sans titre',
   'source.aria': 'Source {n} : {title}',

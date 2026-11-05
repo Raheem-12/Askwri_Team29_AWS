@@ -1,3 +1,4 @@
+# DEPRECATED: this scores the agents app in src/, not the globe app. Use eval/run_eval_prototype.py.
 # usage: python eval/run_eval.py
 # recall = expected docs that showed up in the citations
 # precision = cited docs that were expected

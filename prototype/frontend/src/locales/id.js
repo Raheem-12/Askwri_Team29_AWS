@@ -130,10 +130,10 @@ export default {
   'scope.title': 'Di luar cakupan AskWRI',
   'scope.default': 'Coba ajukan pertanyaan tentang topik riset WRI.',
   'scope.announce': 'Pertanyaan itu di luar cakupan AskWRI.',
-  'insufficient.title': 'Bukti dalam sampel tidak cukup',
+  'insufficient.title': 'Bukti dalam publikasi yang dicari tidak cukup',
   'insufficient.default': 'Kutipan yang ditemukan tidak cukup untuk menjawab pertanyaan ini.',
   'insufficient.hint': 'Coba persempit pertanyaan atau periksa publikasi mana saja yang disertakan.',
-  'insufficient.announce': 'Bukti dalam sampel tidak cukup.',
+  'insufficient.announce': 'Bukti dalam publikasi yang dicari tidak cukup.',
 
   'source.untitled': 'Publikasi tanpa judul',
   'source.aria': 'Sumber {n}: {title}',

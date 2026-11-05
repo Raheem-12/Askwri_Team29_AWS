@@ -130,10 +130,10 @@ export default {
   'scope.title': '超出 AskWRI 的范围',
   'scope.default': '请尝试提出与 WRI 研究主题相关的问题。',
   'scope.announce': '该问题超出了 AskWRI 的范围。',
-  'insufficient.title': '样本中证据不足',
+  'insufficient.title': '所查阅的出版物中证据不足',
   'insufficient.default': '检索到的段落不足以回答此问题。',
   'insufficient.hint': '请尝试缩小问题范围，或查看收录了哪些出版物。',
-  'insufficient.announce': '样本中证据不足。',
+  'insufficient.announce': '所查阅的出版物中证据不足。',
 
   'source.untitled': '无标题出版物',
   'source.aria': '来源 {n}：{title}',
