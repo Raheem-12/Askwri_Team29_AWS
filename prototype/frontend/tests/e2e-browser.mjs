@@ -155,10 +155,10 @@ try {
   check('session: follow-up stacks the earlier answer', await waitFor(`document.querySelectorAll('#session-turns .turn').length === 1 && !!document.querySelector('#answer-body a.cite') && document.getElementById('answer-panel').getAttribute('aria-busy') === 'false'`));
   await sleep(600); await shot('11-follow-up');
   await mouse(...Object.values(await center('#tab-past')));
-  await sleep(150);
-  const mid = await evalJS(`getComputedStyle(document.querySelector('.panel-track')).transform`);
-  check('toggle: the panes slide (still moving partway through)', /matrix/.test(mid) && !/, -?0, 0\)$/.test(mid) && await evalJS(`document.getElementById('panel-panes').dataset.active === 'past'`), mid);
-  await sleep(600);
+  // Sample the whole slide: one sample can land before it starts on a busy machine.
+  const positions = await evalJS(`new Promise(resolve => { const track = document.querySelector('.panel-track'), seen = [], until = performance.now() + 900; const step = () => { seen.push(new DOMMatrix(getComputedStyle(track).transform).m41); performance.now() < until ? requestAnimationFrame(step) : resolve(seen); }; step(); })`, true);
+  const end = positions.at(-1), partway = positions.filter(x => x < -1 && x > end + 1).length;
+  check('toggle: the panes slide (still moving partway through)', end < -100 && partway >= 3 && await evalJS(`document.getElementById('panel-panes').dataset.active === 'past'`), `${partway} frames partway, ends at ${Math.round(end)}px`);
   const settled = await evalJS(`(() => { const a = document.getElementById('pane-past').getBoundingClientRect(), p = document.getElementById('answer-panel').getBoundingClientRect(); return Math.abs(a.left - p.left) < 2; })()`);
   check('toggle: Past sessions pane lands inside the panel', settled);
   await shot('12-past-empty');

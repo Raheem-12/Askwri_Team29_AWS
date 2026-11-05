@@ -18,6 +18,7 @@ from botocore.exceptions import BotoCoreError, ClientError
 OUT_OF_SCOPE = ('AskWRI answers questions about WRI research on cities, climate, energy, '
                 'food, forests, freshwater and the ocean. Try rephrasing your question.')
 MAX_GROUNDING_CHARS = 100_000
+MAX_QUERY_CHARS = 1000  # Bedrock's limit on the grounding query; the question box allows more
 
 
 class GuardrailError(Exception):
@@ -100,7 +101,7 @@ def check_output(client, answer_text, question, passages):
         return True
     grounding = '\n\n'.join(passages)[:MAX_GROUNDING_CHARS]
     content = [{'text': {'text': grounding, 'qualifiers': ['grounding_source']}},
-               {'text': {'text': question, 'qualifiers': ['query']}},
+               {'text': {'text': question[:MAX_QUERY_CHARS], 'qualifiers': ['query']}},
                {'text': {'text': answer_text, 'qualifiers': ['guard_content']}}]
     response = _apply(client, 'OUTPUT', content)
     # Any intervention declines the answer. Rewriting claim text would desync it from

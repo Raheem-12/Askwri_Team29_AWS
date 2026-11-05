@@ -138,9 +138,9 @@ data/               Manifests, URL lists, Radar's catalog (data/raw/ and radar.d
 prototype/
   backend/          FastAPI service: cited Q&A, map locations, place glances, briefings, graph
   frontend/         Vite + Three.js globe UI with pins, glance cards, sessions and the connection map
-security/           Red-team scripts, input precheck (not connected to the app yet), corpus integrity checks
+security/           Red-team scripts, input precheck (used by the globe backend), corpus integrity checks
 .github/workflows/  Security CI: secret scan, static analysis, security tests, dependency audit
-infra/              S3 TLS bucket policy and a guardrail config, neither applied to the live resources
+infra/              Examples from another account: an S3 HTTPS-only policy (the live bucket has its own) and an unapplied guardrail config
 docs/               Setup guides: guardrails-setup.md, knowledge-base-handoff.md (plus WRI.pdf)
 ```
 
@@ -171,6 +171,16 @@ The globe app runs in English, Spanish, Portuguese, French, Indonesian, Hindi an
 Follow [`docs/guardrails-setup.md`](docs/guardrails-setup.md) to create the Bedrock guardrail (PII masking, off-topic blocking, grounding checks) from [`docs/guardrail.json`](docs/guardrail.json), then put `GUARDRAIL_ID` and `GUARDRAIL_VERSION` in `.env`. Without them the app runs with safety filters off and says so.
 
 `docs/guardrail.json` matches the live guardrail. `infra/guardrail.json` is a separate proposal from the security branch.
+
+**Layers, in the order a question meets them:**
+
+- **Web:** host allowlist, 64 KB body limit, and a rate limit on the routes that spend Bedrock tokens (`hardening.py`). Responses carry a Content-Security-Policy and other security headers. The API map at `/docs` is off.
+- **Disguised input:** `security/precheck.py` rejects base64, hex, ROT13 and reversed instructions before any AWS call.
+- **Guardrail:** input check, then an output check with grounding at 0.7. If it can't run, the request stops.
+- **Model:** answers only from the supplied passages. If its own safety filter declines, that's a refusal.
+- **Verification:** every quote must match its passage word for word.
+
+**Before hosting this anywhere public:** add sign-in, because `/radar` and `/api/radar` are open to anyone who can reach the server, and put HTTPS and an edge rate limit in front of it. The rate limit here is per process, and it sees a load balancer as one client unless the server is set up to trust forwarded addresses. `api/server.py` (the agents app) has none of these web protections, so keep it local.
 
 **If every question returns 503,** the AWS credentials have probably expired. Get new ones and run `aws configure`, or update `~/.aws/credentials`. The guardrail can't run without them, so the app stops rather than answering unchecked.
 

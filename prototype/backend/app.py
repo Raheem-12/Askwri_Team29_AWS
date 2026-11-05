@@ -34,14 +34,19 @@ import demo  # noqa: E402  (after load_dotenv so modules see the environment)
 import geo  # noqa: E402
 import graph  # noqa: E402
 import guardrails  # noqa: E402
+import hardening  # noqa: E402
 
+sys.path.insert(0, str(REPO / 'security'))  # pure-code input checks, no AWS calls
+import precheck  # noqa: E402
 sys.path.insert(0, str(REPO / 'src'))  # Demand Radar lives with the agents app; it needs only the stdlib
 from askwri import radar  # noqa: E402
 
 REFUSAL = 'Insufficient evidence in the sample to answer this question.'
 DIST = ROOT.parent / 'frontend' / 'dist'
 MAX_PINS = 8
-app = FastAPI(title='AskWRI', version='0.2.0')
+# No /docs or /openapi.json: a public API map helps attackers and nothing here uses it.
+app = FastAPI(title='AskWRI', version='0.2.0', docs_url=None, redoc_url=None, openapi_url=None)
+hardening.install(app, REPO / 'ui' / 'radar.html')
 
 
 logger = logging.getLogger('askwri')
@@ -390,6 +395,11 @@ def generate(generator, model_id, mode, system, payload, max_tokens):
         messages=[{'role': 'user', 'content': [{'text': json.dumps(payload, ensure_ascii=False)}]}],
         inferenceConfig=inference_config(max_tokens))
     raw = ''.join(c.get('text', '') for c in response['output']['message']['content'])
+    if response.get('stopReason') == 'content_filtered':
+        # The model's own safety system declined. That is a refusal, not a broken reply: retrying
+        # spends tokens on the same answer, and a 502 would tell the person to try again.
+        log_invalid(mode, 'model_declined', stop='content_filtered', chars=len(raw))
+        return {'answerable': False}
     try:
         return parse_model_json(raw)
     except ValueError:
@@ -431,6 +441,14 @@ def generate_checked(generator, model_id, mode, system, body, max_tokens, check)
                 raise
 
 
+def screen(text):
+    """Reject encoded or disguised instructions, which a text filter can't read. Runs first, with or
+    without a guardrail. The question box's own length limit applies, not the precheck's."""
+    if precheck.obfuscation(text):
+        raise guardrails.Blocked(guardrails.OUT_OF_SCOPE)
+    return text
+
+
 def checked_history(guard, history):
     """Earlier turns, masked. Each piece is checked alone, as it was when first asked: the guardrail
     reads one long transcript as a prompt attack, which would block the rest of the session."""
@@ -457,6 +475,9 @@ def answer_question(question, retriever, generator, kb_id, model_id, guard=None,
     It helps find passages and explains the question, but quotes must come from this retrieval."""
     extra = dict(extra or {})
     try:
+        screen(question)
+        for turn in history or []:
+            screen(turn.question)
         question = guardrails.check_input(guard, question) if guard else question
         if history:
             extra['conversation'] = checked_history(guard, history)
@@ -499,6 +520,8 @@ def log_to_radar(result, team=None, endpoint='ask', question=None):
 
 def build_briefing(place, topic, retriever, generator, kb_id, model_id, guard=None, language='en'):
     try:
+        if topic:
+            screen(topic)
         topic = guardrails.check_input(guard, topic) if guard and topic else topic
     except guardrails.Blocked as blocked:
         return {'status': 'out_of_scope', 'message': str(blocked), 'place': place, 'topic': None,

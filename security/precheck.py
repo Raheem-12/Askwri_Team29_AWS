@@ -30,16 +30,24 @@ def has_hex_payload(text):
             return True
     return False
 
+def obfuscation(text):
+    """Name of the disguise hiding instructions in the text, or None. No length rule."""
+    t = CTRL.sub("", (text or "").strip())
+    if has_encoded_payload(t):
+        return "base64"
+    if has_hex_payload(t):
+        return "hex"
+    for name, variant in (("rot13", codecs.decode(t, "rot_13")), ("reversed", t[::-1])):
+        if INJECTION.search(variant):
+            return name
+    return None
+
 def precheck(text):
     """Return (ok, reason, cleaned_text)."""
     t = CTRL.sub("", (text or "").strip())
     if not 1 <= len(t) <= MAX_LEN:
         return False, "length", ""
-    if has_encoded_payload(t):
-        return False, "base64", ""
-    if has_hex_payload(t):
-        return False, "hex", ""
-    for name, variant in (("rot13", codecs.decode(t, "rot_13")), ("reversed", t[::-1])):
-        if INJECTION.search(variant):
-            return False, name, ""
+    reason = obfuscation(t)
+    if reason:
+        return False, reason, ""
     return True, "-", t
