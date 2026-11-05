@@ -21,6 +21,8 @@ from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.responses import FileResponse, JSONResponse, PlainTextResponse
 from fastapi.staticfiles import StaticFiles
+from typing import Literal
+
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 ROOT = Path(__file__).parent
@@ -42,26 +44,38 @@ app = FastAPI(title='AskWRI', version='0.2.0')
 
 
 # ---------------------------------------------------------------- schemas
+# Languages the answer text can be written in. Keys match the frontend's language picker.
+LANGUAGES = {'en': 'English', 'es': 'Spanish', 'pt': 'Brazilian Portuguese', 'fr': 'French',
+             'id': 'Indonesian', 'hi': 'Hindi', 'zh': 'Simplified Chinese'}
+LanguageCode = Literal[tuple(LANGUAGES)]
+
+
 class Question(BaseModel):
     question: str = Field(min_length=3, max_length=2000)
     team: str | None = Field(default=None, max_length=60)
+    language: LanguageCode = 'en'
 
 
 class GlanceRequest(BaseModel):
     place: str = Field(min_length=2, max_length=120)
     question: str | None = Field(default=None, min_length=3, max_length=500)
     team: str | None = Field(default=None, max_length=60)
+    language: LanguageCode = 'en'
 
 
 class BriefingRequest(BaseModel):
     place: str = Field(min_length=2, max_length=120)
     topic: str | None = Field(default=None, min_length=3, max_length=300)
+    language: LanguageCode = 'en'
 
 
 class EvidenceRef(BaseModel):
     model_config = ConfigDict(extra='forbid')
     source_id: str
     quote: str = Field(min_length=10, max_length=1500)
+    # Reading aid only, for answers in another language. Never verified and never used
+    # for verification: the original `quote` is what must match the passage.
+    translation: str | None = Field(default=None, max_length=2000)
 
 
 class Claim(BaseModel):
@@ -120,6 +134,27 @@ SYSTEM_BRIEFING = '''You are AskWRI. Write a short research briefing from WRI pa
 Return ONLY JSON: {"answerable":true,"overview":[claim],"key_findings":[claim]} where each
 claim is {"text":"...","evidence":[{"source_id":"S1","quote":"Exact supporting passage"}]}.
 Overview: 1 to 3 claims. Key findings: up to 6 claims, each a distinct finding.'''
+
+
+def with_language(system, language):
+    """Ask for claim text in another language. Quotes are never translated: verification
+    compares each quote with its passage character for character, and readers can check the
+    translated claim against the original words."""
+    if language == 'en':
+        return system
+    return system + f"""
+OUTPUT LANGUAGE: Write every claim "text" and every location "issue" in {LANGUAGES[language]},
+even if the question or passages use another language. Copy every "quote" exactly as it appears
+in its passage, in the passage's own language: never translate a quote. Add a "translation"
+field next to each evidence "quote" with its {LANGUAGES[language]} translation, for example
+{{"source_id":"S1","quote":"exact original text","translation":"translated text"}}. Do not add
+"translation" to locations. Keep each location "name" exactly as the quote spells it."""
+
+
+def language_fields(language):
+    """What the browser needs to label a translated answer honestly. Sample mode replays canned
+    English sentences, so it cannot write in another language; say so instead of pretending."""
+    return {'language': 'en' if demo_mode() else language, 'requested_language': language}
 
 
 # ---------------------------------------------------------------- helpers
@@ -337,19 +372,19 @@ def invalid_response():
 
 
 def answer_question(question, retriever, generator, kb_id, model_id, guard=None,
-                    mode='ask', system=SYSTEM_ASK, extra=None, count=6, search_query=None):
+                    mode='ask', system=SYSTEM_ASK, extra=None, count=6, search_query=None, language='en'):
     """Shared by /api/ask and /api/glance. `question` is already scoped by the caller.
     `search_query` overrides what is sent to retrieval; it must not contain user text."""
     try:
         question = guardrails.check_input(guard, question) if guard else question
     except guardrails.Blocked as blocked:
         return {'status': 'out_of_scope', 'answer': str(blocked), 'claims': [], 'sources': [],
-                'locations': [], 'topic': None, 'demo': demo_mode()}
+                'locations': [], 'topic': None, 'demo': demo_mode(), **language_fields(language)}
     sources, top_score = retrieve_sources(retriever, kb_id, search_query or question, count)
-    done = {'topic': question, 'demo': demo_mode(), '_top_score': top_score}
+    done = {'topic': question, 'demo': demo_mode(), '_top_score': top_score, **language_fields(language)}
     if not sources:
         return {**validate_answer({'answerable': False, 'claims': []}, []), **done}
-    payload = generate(generator, model_id, mode, system,
+    payload = generate(generator, model_id, mode, with_language(system, language),
                        {'question': question, 'passages': sources, **(extra or {})}, 1800)
     try:
         result = validate_answer(payload, sources)
@@ -380,18 +415,18 @@ def log_to_radar(result, team=None, endpoint='ask', question=None):
     return result
 
 
-def build_briefing(place, topic, retriever, generator, kb_id, model_id, guard=None):
+def build_briefing(place, topic, retriever, generator, kb_id, model_id, guard=None, language='en'):
     try:
         topic = guardrails.check_input(guard, topic) if guard and topic else topic
     except guardrails.Blocked as blocked:
         return {'status': 'out_of_scope', 'message': str(blocked), 'place': place, 'topic': None,
-                'sections': [], 'sources': [], 'demo': demo_mode()}
+                'sections': [], 'sources': [], 'demo': demo_mode(), **language_fields(language)}
     query = f'{topic} in {place}' if topic else f'Main research issues in {place}'
-    done = {'place': place, 'topic': topic, 'demo': demo_mode()}
+    done = {'place': place, 'topic': topic, 'demo': demo_mode(), **language_fields(language)}
     sources, _top_score = retrieve_sources(retriever, kb_id, query, 10)
     if not sources:
         return {**done, 'status': 'insufficient_evidence', 'message': REFUSAL, 'sections': [], 'sources': []}
-    payload = generate(generator, model_id, 'briefing', SYSTEM_BRIEFING,
+    payload = generate(generator, model_id, 'briefing', with_language(SYSTEM_BRIEFING, language),
                        {'place': place, 'topic': topic or 'main research issues', 'passages': sources}, 3000)
     try:
         briefing = validate_briefing(payload, sources)
@@ -429,7 +464,8 @@ def run_aws(fn):
 @app.get('/api/status')
 def status():
     return {'configured': not missing_settings(), 'missing': missing_settings(), 'connection_verified': False,
-            'demo': demo_mode(), 'guardrails': guardrails.configured(), 'milestone': '2 - Map and briefings'}
+            'demo': demo_mode(), 'guardrails': guardrails.configured(), 'milestone': '2 - Map and briefings',
+            'languages': list(LANGUAGES)}
 
 
 @app.post('/api/ask')
@@ -438,7 +474,8 @@ def ask(request: Question):
     if len(question) < 3:
         raise HTTPException(422, 'Enter a research question.')
     return run_aws(lambda retriever, generator, guard, kb, model: log_to_radar(
-        answer_question(question, retriever, generator, kb, model, guard), team=request.team))
+        answer_question(question, retriever, generator, kb, model, guard, language=request.language),
+        team=request.team))
 
 
 @app.post('/api/glance')
@@ -452,7 +489,8 @@ def glance(request: GlanceRequest):
                                  system=SYSTEM_GLANCE, extra={'place': place}, count=6,
                                  # A plain place name finds passages about it. Longer wording
                                  # ("WRI research...") drags in WRI's own administrative files.
-                                 search_query=None if request.question else place)
+                                 search_query=None if request.question else place,
+                                 language=request.language)
         if request.question:  # typed by a person; automatic summaries are not demand
             result = log_to_radar(result, team=request.team, endpoint='glance')
         else:
@@ -467,7 +505,7 @@ def briefing(request: BriefingRequest):
     place = known_place(request.place)
     topic = request.topic.strip() if request.topic else None
     return run_aws(lambda retriever, generator, guard, kb, model:
-                   build_briefing(place, topic, retriever, generator, kb, model, guard))
+                   build_briefing(place, topic, retriever, generator, kb, model, guard, request.language))
 
 
 @app.get('/api/graph')

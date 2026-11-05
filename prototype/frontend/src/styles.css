@@ -83,7 +83,7 @@ body[data-has-answer] #intro, body[data-view="graph"] #intro { display: none; }
 .askbar { position: absolute; z-index: 15; bottom: 20px; left: calc(var(--inset-l, 0px) + 16px); right: calc(var(--inset-r, 0px) + 16px); max-width: 720px; margin-inline: auto; display: grid; gap: 10px; transition: left 0.5s var(--ease), right 0.5s var(--ease), transform 0.45s var(--ease), opacity 0.3s; }
 .ask-row { display: flex; align-items: flex-end; gap: 8px; padding: 8px 8px 8px 18px; border-radius: 22px; background: var(--panel); border: 1px solid var(--line); backdrop-filter: blur(14px); box-shadow: 0 10px 40px rgba(0, 0, 0, 0.35); transition: border-color 0.25s; }
 .ask-row:focus-within { border-color: rgba(227, 188, 91, 0.6); }
-#team { flex: none; max-width: 104px; align-self: center; margin-right: 6px; padding: 5px 8px; border: 1px solid var(--line); border-radius: 10px; background: var(--panel-solid); color: var(--ink-soft); font-size: 13px; cursor: pointer; }
+#team, .lang-select { flex: none; max-width: 104px; align-self: center; margin-right: 6px; padding: 5px 8px; border: 1px solid var(--line); border-radius: 10px; background: var(--panel-solid); color: var(--ink-soft); font-size: 13px; cursor: pointer; }
 #question { flex: 1; resize: none; border: 0; outline: 0; background: none; padding: 9px 0; max-height: 120px; line-height: 1.45; }
 #question::placeholder { color: var(--muted); }
 #question:read-only { opacity: 0.7; }
@@ -126,6 +126,13 @@ body[data-has-answer] .askbar .chips { display: none; }
 
 /* ---------- answer content ---------- */
 .radar-note { margin-top: 12px; font-size: 12.5px; color: var(--muted); }
+.translation-note { margin-top: 12px; padding: 8px 10px; border-radius: 10px; background: rgba(227, 188, 91, 0.08); border: 1px solid rgba(227, 188, 91, 0.25); font-size: 12.5px; color: var(--ink-soft); }
+.rerun { display: block; margin-bottom: 10px; }
+.quote-translation { margin: -2px 12px 10px 58px; font-size: 13px; color: var(--muted); }
+.quote-translation-label { display: block; font-size: 11px; letter-spacing: 0.02em; opacity: 0.85; }
+.quote-translation p { margin-top: 2px; font-style: italic; }
+.briefing-nav { display: flex; align-items: center; gap: 12px; }
+.lang-select { margin-right: 0; padding: 5px 8px; border: 1px solid var(--line); border-radius: 10px; background: var(--panel-solid); color: var(--ink-soft); font-size: 13px; cursor: pointer; }
 .result-query { color: var(--muted); font-size: 13px; margin-bottom: 12px; }
 .claim { margin: 0 0 12px; font-size: 15.5px; line-height: 1.6; }
 .cite { display: inline-grid; place-items: center; min-width: 18px; height: 18px; margin-left: 4px; padding: 0 4px; border-radius: 9px; background: rgba(227, 188, 91, 0.2); color: var(--gold); font-size: 11px; font-weight: 700; text-decoration: none; vertical-align: 2px; }
@@ -231,6 +238,7 @@ body[data-view="graph"] #guardrail-note { display: none; }
   .brand span { display: none; } /* room for the three view links */
   .view-toggle button, .view-toggle a { padding: 6px 11px; }
   #team { display: none; } /* optional; keeps the question box usable on a phone */
+  .ask-row .lang-select { max-width: 72px; } /* the language stays reachable on a phone */
   #guardrail-note { display: none; }
   .globe-controls { display: none; } /* pinch and drag do the same job on touch */
   .askbar { left: 12px; right: 12px; bottom: 12px; }

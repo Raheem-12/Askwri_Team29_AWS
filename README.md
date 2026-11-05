@@ -111,6 +111,15 @@ These are git-ignored and shared between teammates directly. Put them in these e
 | `.venv/` | `prototype/backend/` and optionally the repo root | Per-app virtual environments. |
 | `node_modules/`, `dist/` | `prototype/frontend/` | From `npm ci` and `npm run build`. |
 
+## Languages
+
+The globe app runs in English, Spanish, Portuguese, French, Indonesian, Hindi and Simplified Chinese, for WRI's offices in Latin America, Brazil, francophone Africa, Indonesia, India and China.
+
+- **Interface:** every label, message and screen-reader text is translated (`prototype/frontend/src/locales/`). The translations are machine drafts: ask a native speaker on the team to review each file before a real launch.
+- **Answers:** the backend tells the model to write each claim in the chosen language (`language` on `/api/ask`, `/api/glance`, `/api/briefing`). Quotes are never translated, so the word-for-word quote check still works and readers see the original evidence. Each quote also gets a machine translation for reading, which is never used for verification.
+- **Demo:** ask in Spanish and get a Spanish answer backed by quotes from the original English PDF. This needs the live Knowledge Base; sample-data mode answers in English and says so.
+- **To check with real Bedrock:** that the guardrail's grounding check accepts non-English answers against English sources. If it declines them, that check needs a language-aware setup.
+
 ## Safety: guardrails and PII
 
 Follow [`docs/guardrails-setup.md`](docs/guardrails-setup.md) to create the Bedrock guardrail (PII masking, off-topic blocking, grounding checks) from [`docs/guardrail.json`](docs/guardrail.json), then put `GUARDRAIL_ID` and `GUARDRAIL_VERSION` in `.env`. Until then the app runs with safety filters off and says so.

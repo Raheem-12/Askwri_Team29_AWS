@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { latLonToXYZ, angleBetween, framingDistance } from './geo.js';
+import { t } from './i18n.js';
 
 const INITIAL = new THREE.Vector3(0.15, 0.4, 3.8);
 const IDLE_BEFORE_ROTATE_MS = 5000;
@@ -66,7 +67,7 @@ export function createGlobe(host, { onStatus = () => {}, isActive = () => true }
     material.needsUpdate = true;
     renderer.domElement.dataset.textureLoaded = 'true';
     onStatus(null);
-  }).catch(() => onStatus('Earth texture could not load. Research search remains available.'));
+  }).catch(() => onStatus(t('globe.texture_failed')));
   loader.loadAsync(texturePath('earth_normal_2048.jpg')).then(t => {
     material.normalMap = t; material.normalScale.set(0.45, 0.45); material.needsUpdate = true;
   }).catch(() => {});
@@ -179,7 +180,7 @@ export function createGlobe(host, { onStatus = () => {}, isActive = () => true }
 
   renderer.domElement.addEventListener('webglcontextlost', event => {
     event.preventDefault(); lost = true;
-    onStatus('The 3D view was interrupted. Waiting for graphics recovery. Your answer is unaffected.');
+    onStatus(t('globe.context_lost'));
   });
   renderer.domElement.addEventListener('webglcontextrestored', () => { lost = false; onStatus(null); resize(); });
 
