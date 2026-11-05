@@ -74,3 +74,42 @@ def test_refusal_reasons_are_labelled():
     bad = payload()
     bad['claims'][0]['evidence'][0]['quote'] = 'a sentence the passage never contains'
     assert ask(Replies(bad, bad))['refusal_reason'] == 'quote_mismatch'
+
+
+# ------------------------------------------------------------ tightened matching
+@pytest.mark.parametrize('quote, passage', [
+    ('no table food supply', 'a notable food supply remains'),         # a space inside a word changes the word
+    ('reduced by 5-10%', 'it was reduced by 510% overall'),             # a range is not one number
+    ('reduced by 510% overall', 'it was reduced by 5-10% overall'),
+    ('heat risk of flooding', 'the wheat risk of flooding grows'),      # starts inside a word
+    ('the risk of flood', 'the risk of flooding grows here'),           # ends inside a word
+    ('5 percent of land', 'about 0.5 percent of land is left'),         # starts inside a decimal
+    ('rose to 3 percent', 'rose to 3.5 percent in total'),              # different number
+    ('prices rose to 3', 'prices rose to 3.5 percent'),                 # ends inside a decimal
+    ('fell by 5 percent', 'fell by -5 percent overall'),                # loses a minus sign
+    ('5 percent change', 'a -5 percent change here'),
+    ('rose to 3. 5 percent', 'rose to 3.5 percent'),                    # a space inside a number
+    ('count of 1 000 cities', 'a count of 1000 cities'),
+])
+def test_quotes_that_change_the_meaning_are_rejected(quote, passage):
+    assert quotes.locate(quote, passage) is None
+
+
+@pytest.mark.parametrize('quote, passage, expected', [
+    ('rate rose by 2 %', 'the rate rose by 2% here', 'rate rose by 2%'),                         # space by punctuation
+    ('between 2019-2023 data', 'between 2019–2023 data', 'between 2019–2023 data'),    # dash style in a range
+    ('between 5 - 10 percent', 'between 5-10 percent', 'between 5-10 percent'),
+    ('levels from pre-1990 onward', 'levels from pre 1990 onward', 'levels from pre 1990 onward'),
+    ('the COVID-19 pandemic', 'the COVID‑19 pandemic', 'the COVID‑19 pandemic'),
+    ('electric pursuing fleets', 'electric pursu-\ning fleets', 'electric pursu-\ning fleets'),   # line-break hyphen
+    ('soft hyphen breaks here', 'soft hy­ phen breaks here', 'soft hy­ phen breaks here'),
+    ('fell by -5 percent', 'fell by −5 percent', 'fell by −5 percent'),                # minus style
+    ('ends in a sentence.', 'it ends in a sentence. Then more', 'ends in a sentence.'),
+    ('a repeat that matches', 'not a repeat that matchesx but a repeat that matches', 'a repeat that matches'),
+    ('城市需要更好的基础', '所有城市需要更好的基础设施',
+     '城市需要更好的基础'),                                   # Chinese has no word spaces
+    ('शहरों को बेहतर', 'सभी शहरों को बेहतर ढांचा',
+     'शहरों को बेहतर'),               # Hindi marks are part of a word
+])
+def test_honest_quotes_still_match_and_return_the_passages_text(quote, passage, expected):
+    assert quotes.locate(quote, passage) == expected
