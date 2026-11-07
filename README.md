@@ -9,7 +9,9 @@ Built by Team 29 — Nexivra during the AWS Breaking Barriers 2026 Hackathon.
 
 ## Demo
 
-🎥 **[Watch the AskWRI Demo](YOUR_DEMO_VIDEO_URL_HERE)**
+## Demo
+
+🎥 **[Watch the AskWRI Demo](./AskWRI_Demo_Compatible.mp4)**
 
 The demo showcases the research interface, interactive 3D globe, AI-generated answers, and source citations.
 
